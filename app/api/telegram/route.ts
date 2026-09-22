@@ -4,7 +4,7 @@ import { createClient } from '@supabase/supabase-js'
 export const maxDuration = 60
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || ''
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || ''
+const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || ''
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
 const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || ''
 
@@ -57,44 +57,44 @@ Extrae exactamente estos campos (en español, como aparecen en la imagen):
 Responde SOLO con el JSON, sin texto adicional. Si no puedes leer algún campo, usa null.
 Ejemplo: {"match":"Real Madrid vs Barcelona","pick":"1X2 - Local","odds":1.85,"bookmaker":"Bet365","sport":"Fútbol","competition":"La Liga","units":1,"stake":10}`
 
-  const body = {
-    contents: [{ parts: [{ text: prompt }, { inlineData: { mimeType: 'image/jpeg', data: imageBase64 } }] }],
+  // OpenRouter - free vision models, OpenAI-compatible API
+  const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
+      'HTTP-Referer': 'https://mm-b3t.vercel.app',
+      'X-Title': 'mm_b3t Betting Tracker',
+    },
+    body: JSON.stringify({
+      model: 'google/gemini-2.0-flash-exp:free',
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: prompt },
+            { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${imageBase64}` } },
+          ],
+        },
+      ],
+      max_tokens: 512,
+    }),
+  })
+
+  if (!res.ok) {
+    const err = await res.text()
+    throw new Error(`OpenRouter error ${res.status}: ${err.slice(0, 200)}`)
   }
 
-  // New AQ. format keys use x-goog-api-key header + newer model names
-  const candidates = [
-    { version: 'v1beta', model: 'gemini-2.0-flash', auth: 'goog-header' },
-    { version: 'v1beta', model: 'gemini-2.0-flash-lite', auth: 'goog-header' },
-    { version: 'v1beta', model: 'gemini-1.5-flash', auth: 'goog-header' },
-    { version: 'v1beta', model: 'gemini-2.0-flash', auth: 'query' },
-    { version: 'v1beta', model: 'gemini-1.5-flash', auth: 'query' },
-    { version: 'v1', model: 'gemini-1.5-flash', auth: 'goog-header' },
-  ]
-  const errors: string[] = []
+  const data = await res.json()
+  const text: string = data.choices?.[0]?.message?.content || ''
+  if (!text) return null
 
-  for (const { version, model, auth } of candidates) {
-    const url = auth === 'query'
-      ? `https://generativelanguage.googleapis.com/${version}/models/${model}:generateContent?key=${GEMINI_API_KEY}`
-      : `https://generativelanguage.googleapis.com/${version}/models/${model}:generateContent`
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-    if (auth === 'goog-header') headers['x-goog-api-key'] = GEMINI_API_KEY
-
-    const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) })
-    if (!res.ok) {
-      const err = await res.text()
-      errors.push(`${version}/${model}(${auth}): ${res.status}`)
-      continue
-    }
-    const data = await res.json()
-    const text: string = data.candidates?.[0]?.content?.parts?.[0]?.text || ''
-    if (!text) continue
-    try {
-      const jsonMatch = text.match(/\{[\s\S]*\}/)
-      if (jsonMatch) return JSON.parse(jsonMatch[0])
-    } catch { /* try next */ }
-  }
-
-  throw new Error(`Gemini failed (${errors.join(', ')})`)
+  try {
+    const jsonMatch = text.match(/\{[\s\S]*\}/)
+    if (jsonMatch) return JSON.parse(jsonMatch[0])
+  } catch { /* parse failed */ }
+  return null
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
