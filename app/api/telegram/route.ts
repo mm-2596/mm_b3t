@@ -57,32 +57,41 @@ Extrae exactamente estos campos (en español, como aparecen en la imagen):
 Responde SOLO con el JSON, sin texto adicional. Si no puedes leer algún campo, usa null.
 Ejemplo: {"match":"Real Madrid vs Barcelona","pick":"1X2 - Local","odds":1.85,"bookmaker":"Bet365","sport":"Fútbol","competition":"La Liga","units":1,"stake":10}`
 
-  // Try v1 first, fall back to v1beta
+  const body = {
+    contents: [{ parts: [{ text: prompt }, { inlineData: { mimeType: 'image/jpeg', data: imageBase64 } }] }],
+  }
+
+  // Try all combinations: API key as query param or Bearer token, v1 and v1beta
   const models = ['gemini-1.5-flash', 'gemini-1.5-flash-001', 'gemini-pro-vision']
   const versions = ['v1', 'v1beta']
+  const errors: string[] = []
 
   for (const version of versions) {
     for (const modelName of models) {
-      const url = `https://generativelanguage.googleapis.com/${version}/models/${modelName}:generateContent?key=${GEMINI_API_KEY}`
-      const body = {
-        contents: [{ parts: [{ text: prompt }, { inlineData: { mimeType: 'image/jpeg', data: imageBase64 } }] }],
+      // Try as query param (standard API key)
+      for (const [urlSuffix, headers] of [
+        [`?key=${GEMINI_API_KEY}`, { 'Content-Type': 'application/json' }],
+        [``, { 'Content-Type': 'application/json', 'Authorization': `Bearer ${GEMINI_API_KEY}` }],
+      ] as [string, Record<string, string>][]) {
+        const url = `https://generativelanguage.googleapis.com/${version}/models/${modelName}:generateContent${urlSuffix}`
+        const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) })
+        if (!res.ok) {
+          const err = await res.text()
+          errors.push(`${version}/${modelName}: ${res.status} ${err.slice(0, 100)}`)
+          continue
+        }
+        const data = await res.json()
+        const text: string = data.candidates?.[0]?.content?.parts?.[0]?.text || ''
+        if (!text) continue
+        try {
+          const jsonMatch = text.match(/\{[\s\S]*\}/)
+          if (jsonMatch) return JSON.parse(jsonMatch[0])
+        } catch { /* try next */ }
       }
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      })
-      if (!res.ok) continue
-      const data = await res.json()
-      const text: string = data.candidates?.[0]?.content?.parts?.[0]?.text || ''
-      if (!text) continue
-      try {
-        const jsonMatch = text.match(/\{[\s\S]*\}/)
-        if (jsonMatch) return JSON.parse(jsonMatch[0])
-      } catch { /* try next model */ }
     }
   }
-  return null
+
+  throw new Error(`All Gemini attempts failed:\n${errors.slice(0, 3).join('\n')}`)
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
