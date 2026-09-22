@@ -67,7 +67,7 @@ Ejemplo: {"match":"Real Madrid vs Barcelona","pick":"1X2 - Local","odds":1.85,"b
       'X-Title': 'mm_b3t Betting Tracker',
     },
     body: JSON.stringify({
-      model: 'meta-llama/llama-3.2-11b-vision-instruct:free',
+      model: 'qwen/qwen3.8-27b:free',
       messages: [
         {
           role: 'user',
