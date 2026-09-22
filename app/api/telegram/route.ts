@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-
-export const maxDuration = 60 // seconds (Vercel hobby allows up to 60s for API routes)
-import { GoogleGenerativeAI } from '@google/generative-ai'
 import { createClient } from '@supabase/supabase-js'
+
+export const maxDuration = 60
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || ''
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || ''
@@ -43,9 +42,6 @@ async function getTelegramFile(fileId: string): Promise<Buffer> {
 }
 
 async function parseBetFromImage(imageBase64: string): Promise<Record<string, string> | null> {
-  const genAI = new GoogleGenerativeAI(GEMINI_API_KEY)
-  const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash-latest' })
-
   const prompt = `Eres un asistente de apuestas. Analiza esta captura de pantalla de una apuesta deportiva y extrae la información en formato JSON.
 
 Extrae exactamente estos campos (en español, como aparecen en la imagen):
@@ -61,20 +57,32 @@ Extrae exactamente estos campos (en español, como aparecen en la imagen):
 Responde SOLO con el JSON, sin texto adicional. Si no puedes leer algún campo, usa null.
 Ejemplo: {"match":"Real Madrid vs Barcelona","pick":"1X2 - Local","odds":1.85,"bookmaker":"Bet365","sport":"Fútbol","competition":"La Liga","units":1,"stake":10}`
 
-  const result = await model.generateContent([
-    prompt,
-    { inlineData: { mimeType: 'image/jpeg', data: imageBase64 } },
-  ])
+  // Try v1 first, fall back to v1beta
+  const models = ['gemini-1.5-flash', 'gemini-1.5-flash-001', 'gemini-pro-vision']
+  const versions = ['v1', 'v1beta']
 
-  const text = result.response.text()
-
-  try {
-    const jsonMatch = text.match(/\{[\s\S]*\}/)
-    if (!jsonMatch) return null
-    return JSON.parse(jsonMatch[0])
-  } catch {
-    return null
+  for (const version of versions) {
+    for (const modelName of models) {
+      const url = `https://generativelanguage.googleapis.com/${version}/models/${modelName}:generateContent?key=${GEMINI_API_KEY}`
+      const body = {
+        contents: [{ parts: [{ text: prompt }, { inlineData: { mimeType: 'image/jpeg', data: imageBase64 } }] }],
+      }
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      if (!res.ok) continue
+      const data = await res.json()
+      const text: string = data.candidates?.[0]?.content?.parts?.[0]?.text || ''
+      if (!text) continue
+      try {
+        const jsonMatch = text.match(/\{[\s\S]*\}/)
+        if (jsonMatch) return JSON.parse(jsonMatch[0])
+      } catch { /* try next model */ }
+    }
   }
+  return null
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
