@@ -1,4 +1,4 @@
-import { createClient } from '@supabase/supabase-js'
+import { createBrowserClient } from '@supabase/ssr'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
@@ -11,8 +11,7 @@ export const isSupabaseConfigured = !!(
 )
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export const supabase = isSupabaseConfigured
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  ? createClient<any>(supabaseUrl, supabaseAnonKey)
+export const supabase: ReturnType<typeof createBrowserClient<any>> = isSupabaseConfigured
+  ? createBrowserClient(supabaseUrl, supabaseAnonKey)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   : (null as any)

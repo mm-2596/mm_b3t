@@ -4,9 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import type { Settings } from '@/lib/database.types'
 
-const DEMO_USER_ID = 'demo-user'
-
-const DEFAULT_SETTINGS: Omit<Settings, 'id' | 'created_at' | 'updated_at' | 'user_id'> = {
+const DEFAULT_SETTINGS = {
   bankroll: 1000,
   unit_value: 10,
   unit_percentage: 1,
@@ -27,7 +25,7 @@ export function useSettings() {
       if (error && error.code !== 'PGRST116') throw error
       setSettings(data || null)
     } catch {
-      // Silently fail - will use defaults
+      // Silently fail — use defaults
     } finally {
       setLoading(false)
     }
@@ -39,13 +37,13 @@ export function useSettings() {
 
   const saveSettings = async (updates: Partial<typeof DEFAULT_SETTINGS>) => {
     const { data: { user } } = await supabase.auth.getUser()
-    const userId = user?.id || DEMO_USER_ID
+    if (!user) throw new Error('No autenticado')
 
     if (settings) {
       const { data, error } = await supabase
         .from('settings')
         .update(updates)
-        .eq('user_id', userId)
+        .eq('id', settings.id)
         .select()
         .single()
 
@@ -55,7 +53,7 @@ export function useSettings() {
     } else {
       const { data, error } = await supabase
         .from('settings')
-        .insert({ ...DEFAULT_SETTINGS, ...updates, user_id: userId })
+        .insert({ ...DEFAULT_SETTINGS, ...updates, user_id: user.id })
         .select()
         .single()
 
@@ -65,17 +63,13 @@ export function useSettings() {
     }
   }
 
-  const unitValue = settings?.unit_value ?? DEFAULT_SETTINGS.unit_value
-  const bankroll = settings?.bankroll ?? DEFAULT_SETTINGS.bankroll
-  const unitPercentage = settings?.unit_percentage ?? DEFAULT_SETTINGS.unit_percentage
-
   return {
     settings,
     loading,
     saveSettings,
     refetch: fetchSettings,
-    unitValue,
-    bankroll,
-    unitPercentage,
+    unitValue: settings?.unit_value ?? DEFAULT_SETTINGS.unit_value,
+    bankroll: settings?.bankroll ?? DEFAULT_SETTINGS.bankroll,
+    unitPercentage: settings?.unit_percentage ?? DEFAULT_SETTINGS.unit_percentage,
   }
 }

@@ -4,8 +4,6 @@ import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import type { Transaction } from '@/lib/database.types'
 
-const DEMO_USER_ID = 'demo-user'
-
 export function useTransactions() {
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [loading, setLoading] = useState(true)
@@ -35,11 +33,11 @@ export function useTransactions() {
 
   const addTransaction = async (tx: Omit<Transaction, 'id' | 'created_at' | 'user_id'>) => {
     const { data: { user } } = await supabase.auth.getUser()
-    const userId = user?.id || DEMO_USER_ID
+    if (!user) throw new Error('No autenticado')
 
     const { data, error } = await supabase
       .from('transactions')
-      .insert({ ...tx, user_id: userId })
+      .insert({ ...tx, user_id: user.id })
       .select()
       .single()
 
@@ -69,14 +67,9 @@ export function useTransactions() {
   const netBankroll = totalDeposits - totalWithdrawals
 
   return {
-    transactions,
-    loading,
-    error,
-    addTransaction,
-    deleteTransaction,
+    transactions, loading, error,
+    addTransaction, deleteTransaction,
     refetch: fetchTransactions,
-    totalDeposits,
-    totalWithdrawals,
-    netBankroll,
+    totalDeposits, totalWithdrawals, netBankroll,
   }
 }

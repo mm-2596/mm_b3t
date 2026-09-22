@@ -5,8 +5,6 @@ import { supabase } from '@/lib/supabase'
 import type { Bet } from '@/lib/database.types'
 import { calcProfit } from '@/lib/utils'
 
-const DEMO_USER_ID = 'demo-user'
-
 export function useBets() {
   const [bets, setBets] = useState<Bet[]>([])
   const [loading, setLoading] = useState(true)
@@ -36,11 +34,11 @@ export function useBets() {
 
   const addBet = async (bet: Omit<Bet, 'id' | 'created_at' | 'user_id'>) => {
     const { data: { user } } = await supabase.auth.getUser()
-    const userId = user?.id || DEMO_USER_ID
+    if (!user) throw new Error('No autenticado')
 
     const { data, error } = await supabase
       .from('bets')
-      .insert({ ...bet, user_id: userId })
+      .insert({ ...bet, user_id: user.id })
       .select()
       .single()
 
@@ -50,7 +48,6 @@ export function useBets() {
   }
 
   const updateBet = async (id: string, updates: Partial<Bet>) => {
-    // Auto-calculate result_amount when settling
     if (updates.status && updates.status !== 'pending') {
       const bet = bets.find(b => b.id === id)
       if (bet) {
