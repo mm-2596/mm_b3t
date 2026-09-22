@@ -44,7 +44,7 @@ async function getTelegramFile(fileId: string): Promise<Buffer> {
 
 async function parseBetFromImage(imageBase64: string): Promise<Record<string, string> | null> {
   const genAI = new GoogleGenerativeAI(GEMINI_API_KEY)
-  const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
+  const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash-latest' })
 
   const prompt = `Eres un asistente de apuestas. Analiza esta captura de pantalla de una apuesta deportiva y extrae la información en formato JSON.
 
