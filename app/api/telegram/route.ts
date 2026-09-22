@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
+
+export const maxDuration = 60 // seconds (Vercel hobby allows up to 60s for API routes)
 import { GoogleGenerativeAI } from '@google/generative-ai'
 import { createClient } from '@supabase/supabase-js'
 
@@ -42,7 +44,7 @@ async function getTelegramFile(fileId: string): Promise<Buffer> {
 
 async function parseBetFromImage(imageBase64: string): Promise<Record<string, string> | null> {
   const genAI = new GoogleGenerativeAI(GEMINI_API_KEY)
-  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-exp' })
+  const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
 
   const prompt = `Eres un asistente de apuestas. Analiza esta captura de pantalla de una apuesta deportiva y extrae la información en formato JSON.
 
@@ -256,14 +258,21 @@ export async function POST(request: NextRequest) {
     if (message.photo) {
       await sendTelegramMessage(chatId, '🔍 Analizando tu apuesta...')
 
-      // Use the highest quality photo (last in array)
-      const photos: Array<{ file_id: string }> = message.photo
-      const bestPhoto = photos[photos.length - 1]
-
-      const imageBuffer = await getTelegramFile(bestPhoto.file_id)
-      const imageBase64 = imageBuffer.toString('base64')
-
-      const bet = await parseBetFromImage(imageBase64)
+      let bet: Record<string, string> | null = null
+      try {
+        const photos: Array<{ file_id: string }> = message.photo
+        const bestPhoto = photos[photos.length - 1]
+        const imageBuffer = await getTelegramFile(bestPhoto.file_id)
+        const imageBase64 = imageBuffer.toString('base64')
+        bet = await parseBetFromImage(imageBase64)
+      } catch (err) {
+        console.error('Vision error:', err)
+        await sendTelegramMessage(
+          chatId,
+          `❌ Error analizando la imagen: ${err instanceof Error ? err.message : String(err)}`
+        )
+        return NextResponse.json({ ok: true })
+      }
 
       if (!bet) {
         await sendTelegramMessage(
