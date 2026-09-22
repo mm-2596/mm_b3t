@@ -57,7 +57,7 @@ Responde SOLO el JSON, sin texto extra.`
       'Authorization': `Bearer ${GROQ_API_KEY}`,
     },
     body: JSON.stringify({
-      model: 'llama-3.2-11b-vision-preview',
+      model: 'meta-llama/llama-4-scout-17b-16e-instruct',
       max_tokens: 512,
       messages: [{
         role: 'user',
