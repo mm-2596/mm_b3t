@@ -61,37 +61,40 @@ Ejemplo: {"match":"Real Madrid vs Barcelona","pick":"1X2 - Local","odds":1.85,"b
     contents: [{ parts: [{ text: prompt }, { inlineData: { mimeType: 'image/jpeg', data: imageBase64 } }] }],
   }
 
-  // Try all combinations: API key as query param or Bearer token, v1 and v1beta
-  const models = ['gemini-1.5-flash', 'gemini-1.5-flash-001', 'gemini-pro-vision']
-  const versions = ['v1', 'v1beta']
+  // New AQ. format keys use x-goog-api-key header + newer model names
+  const candidates = [
+    { version: 'v1beta', model: 'gemini-2.0-flash', auth: 'goog-header' },
+    { version: 'v1beta', model: 'gemini-2.0-flash-lite', auth: 'goog-header' },
+    { version: 'v1beta', model: 'gemini-1.5-flash', auth: 'goog-header' },
+    { version: 'v1beta', model: 'gemini-2.0-flash', auth: 'query' },
+    { version: 'v1beta', model: 'gemini-1.5-flash', auth: 'query' },
+    { version: 'v1', model: 'gemini-1.5-flash', auth: 'goog-header' },
+  ]
   const errors: string[] = []
 
-  for (const version of versions) {
-    for (const modelName of models) {
-      // Try as query param (standard API key)
-      for (const [urlSuffix, headers] of [
-        [`?key=${GEMINI_API_KEY}`, { 'Content-Type': 'application/json' }],
-        [``, { 'Content-Type': 'application/json', 'Authorization': `Bearer ${GEMINI_API_KEY}` }],
-      ] as [string, Record<string, string>][]) {
-        const url = `https://generativelanguage.googleapis.com/${version}/models/${modelName}:generateContent${urlSuffix}`
-        const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) })
-        if (!res.ok) {
-          const err = await res.text()
-          errors.push(`${version}/${modelName}: ${res.status} ${err.slice(0, 100)}`)
-          continue
-        }
-        const data = await res.json()
-        const text: string = data.candidates?.[0]?.content?.parts?.[0]?.text || ''
-        if (!text) continue
-        try {
-          const jsonMatch = text.match(/\{[\s\S]*\}/)
-          if (jsonMatch) return JSON.parse(jsonMatch[0])
-        } catch { /* try next */ }
-      }
+  for (const { version, model, auth } of candidates) {
+    const url = auth === 'query'
+      ? `https://generativelanguage.googleapis.com/${version}/models/${model}:generateContent?key=${GEMINI_API_KEY}`
+      : `https://generativelanguage.googleapis.com/${version}/models/${model}:generateContent`
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+    if (auth === 'goog-header') headers['x-goog-api-key'] = GEMINI_API_KEY
+
+    const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) })
+    if (!res.ok) {
+      const err = await res.text()
+      errors.push(`${version}/${model}(${auth}): ${res.status}`)
+      continue
     }
+    const data = await res.json()
+    const text: string = data.candidates?.[0]?.content?.parts?.[0]?.text || ''
+    if (!text) continue
+    try {
+      const jsonMatch = text.match(/\{[\s\S]*\}/)
+      if (jsonMatch) return JSON.parse(jsonMatch[0])
+    } catch { /* try next */ }
   }
 
-  throw new Error(`All Gemini attempts failed:\n${errors.slice(0, 3).join('\n')}`)
+  throw new Error(`Gemini failed (${errors.join(', ')})`)
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
