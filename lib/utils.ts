@@ -86,8 +86,8 @@ export const SPORTS = [
 ]
 
 export const BOOKMAKERS = [
-  'Betfair', 'Bet365', 'Sportium', 'Codere', 'Bwin',
-  'Betway', 'William Hill', 'Unibet', 'Pinnacle', 'Betcris', 'Otro'
+  'Bet365', 'Winamax', 'William Hill', 'Betfair', 'Bwin',
+  'Betway', 'Unibet', 'Pinnacle', 'Sportium', 'Codere', 'Betcris', 'Otro'
 ]
 
 export const STATUS_LABELS: Record<string, string> = {
