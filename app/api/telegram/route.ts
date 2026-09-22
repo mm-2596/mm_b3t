@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
-import Anthropic from '@anthropic-ai/sdk'
+import { GoogleGenerativeAI } from '@google/generative-ai'
 import { createClient } from '@supabase/supabase-js'
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || ''
-const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || ''
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || ''
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
 const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || ''
 
@@ -41,22 +41,10 @@ async function getTelegramFile(fileId: string): Promise<Buffer> {
 }
 
 async function parseBetFromImage(imageBase64: string): Promise<Record<string, string> | null> {
-  const client = new Anthropic({ apiKey: ANTHROPIC_API_KEY })
+  const genAI = new GoogleGenerativeAI(GEMINI_API_KEY)
+  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-exp' })
 
-  const response = await client.messages.create({
-    model: 'claude-opus-5',
-    max_tokens: 1024,
-    messages: [
-      {
-        role: 'user',
-        content: [
-          {
-            type: 'image',
-            source: { type: 'base64', media_type: 'image/jpeg', data: imageBase64 },
-          },
-          {
-            type: 'text',
-            text: `Eres un asistente de apuestas. Analiza esta captura de pantalla de una apuesta deportiva y extrae la información en formato JSON.
+  const prompt = `Eres un asistente de apuestas. Analiza esta captura de pantalla de una apuesta deportiva y extrae la información en formato JSON.
 
 Extrae exactamente estos campos (en español, como aparecen en la imagen):
 - match: nombre del partido o enfrentamiento (ej: "Real Madrid vs Barcelona")
@@ -69,14 +57,14 @@ Extrae exactamente estos campos (en español, como aparecen en la imagen):
 - stake: importe apostado en euros (si aparece, si no pon null)
 
 Responde SOLO con el JSON, sin texto adicional. Si no puedes leer algún campo, usa null.
-Ejemplo: {"match":"Real Madrid vs Barcelona","pick":"1X2 - Local","odds":1.85,"bookmaker":"Bet365","sport":"Fútbol","competition":"La Liga","units":1,"stake":10}`,
-          },
-        ],
-      },
-    ],
-  })
+Ejemplo: {"match":"Real Madrid vs Barcelona","pick":"1X2 - Local","odds":1.85,"bookmaker":"Bet365","sport":"Fútbol","competition":"La Liga","units":1,"stake":10}`
 
-  const text = response.content.find((b) => b.type === 'text')?.text || ''
+  const result = await model.generateContent([
+    prompt,
+    { inlineData: { mimeType: 'image/jpeg', data: imageBase64 } },
+  ])
+
+  const text = result.response.text()
 
   try {
     const jsonMatch = text.match(/\{[\s\S]*\}/)
