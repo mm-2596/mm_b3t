@@ -75,7 +75,7 @@ async function clearSession(supabase: any, chatId: number) {
 // ── Keyboards ─────────────────────────────────────────────────────────────────
 const BOOKMAKERS = ['Bet365', 'Winamax', 'William Hill', 'Bwin', 'Betfair', 'Otro']
 const QUICK_PICKS = ['1', 'X', '2', '1X', 'X2', 'Over 2.5', 'Under 2.5', 'BTTS Sí', 'BTTS No', 'Handicap']
-const COMMON_ODDS = ['1.30', '1.50', '1.70', '1.85', '2.00', '2.25', '2.50', '3.00']
+const COMMON_ODDS = ['1.30', '1.50', '1.70', '1.85', '2.00', '2.25', '2.50', '3.00', '4.00']
 const COMMON_STAKES = ['5', '10', '15', '20', '30', '40', '50', '75', '100']
 
 function bookmakersKb() {
