@@ -357,7 +357,7 @@ export async function POST(request: NextRequest) {
     const rawText: string = (message.text || '').trim()
     const textLower = rawText.toLowerCase()
 
-    if (textLower === '/start' || textLower === '/help') {
+    if (textLower.startsWith('/start') || textLower.startsWith('/help')) {
       await sendMsg(chatId,
         '🎯 <b>mm_b3t Bot</b>\n\n' +
         '📸 Envía una <b>foto</b> o escribe <b>/nueva</b> para registrar una apuesta.\n\n' +
@@ -367,13 +367,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: true })
     }
 
-    if (textLower === '/nueva' || textLower === '/n') {
+    if (textLower.startsWith('/nueva') || textLower === '/n') {
       await clearSession(supabase, chatId)
       await sendMsg(chatId, '📋 ¿En qué <b>casa de apuestas</b>?', bookmakersKb())
       return NextResponse.json({ ok: true })
     }
 
-    if (textLower === '/pendientes') {
+    if (textLower.startsWith('/pendientes')) {
       const { data: bets } = await supabase
         .from('bets').select('*').eq('user_id', userId).eq('status', 'pending')
         .order('created_at', { ascending: false }).limit(5)
@@ -389,7 +389,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: true })
     }
 
-    if (textLower === '/ultima') {
+    if (textLower.startsWith('/ultima')) {
       const { data: bet } = await supabase
         .from('bets').select('*').eq('user_id', userId)
         .order('created_at', { ascending: false }).limit(1).single()
