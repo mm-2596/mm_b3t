@@ -80,6 +80,21 @@ const QUICK_PICKS = ['1', 'X', '2', '1X', 'X2', 'Over 2.5', 'Under 2.5', 'BTTS S
 const COMMON_ODDS = ['1.30', '1.50', '1.70', '1.85', '2.00', '2.25', '2.50', '3.00', '4.00']
 const COMMON_STAKES = ['5', '10', '15', '20', '30', '40', '50', '75', '100']
 
+function mainMenuKb() {
+  return {
+    inline_keyboard: [
+      [
+        { text: '➕ Nueva apuesta', callback_data: 'menu:nueva' },
+        { text: '⏳ Pendientes', callback_data: 'menu:pendientes' },
+      ],
+      [
+        { text: '📊 Resumen hoy', callback_data: 'menu:resumen' },
+        { text: '🔔 Últimas 5', callback_data: 'menu:ultimas' },
+      ],
+    ],
+  }
+}
+
 function bookmakersKb() {
   return {
     inline_keyboard: [
@@ -392,7 +407,79 @@ export async function POST(request: NextRequest) {
 
       if (cbData === 'cancel') {
         await clearSession(supabase, chatId)
-        await editMsg(chatId, messageId, '❌ Cancelado.')
+        await editMsg(chatId, messageId, '❌ Cancelado.', mainMenuKb())
+        return NextResponse.json({ ok: true })
+      }
+
+      // ── Main menu actions ───────────────────────────────────────────────
+      if (cbData === 'menu:nueva') {
+        await clearSession(supabase, chatId)
+        await editMsg(chatId, messageId, '📸 ¿En qué <b>casa de apuestas</b>?', bookmakersKb())
+        return NextResponse.json({ ok: true })
+      }
+
+      if (cbData === 'menu:pendientes') {
+        const { data: bets } = await supabase
+          .from('bets').select('*').eq('user_id', userId).eq('status', 'pending')
+          .order('created_at', { ascending: false }).limit(8)
+        if (!bets?.length) {
+          await editMsg(chatId, messageId, '✅ No tienes apuestas pendientes.', mainMenuKb())
+        } else {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const list = bets.map((b: any, i: number) => {
+            const name = b.match !== 'Apuesta' ? b.match : `${b.pick} @ ${b.odds}`
+            return `${i + 1}. <b>${name}</b> — ${b.bookmaker} | €${b.stake}`
+          }).join('\n')
+          await editMsg(chatId, messageId, `⏳ <b>Pendientes:</b>\n\n${list}`, mainMenuKb())
+        }
+        return NextResponse.json({ ok: true })
+      }
+
+      if (cbData === 'menu:resumen') {
+        const today = new Date().toISOString().split('T')[0]
+        const { data: bets } = await supabase
+          .from('bets').select('*').eq('user_id', userId).eq('date', today)
+        if (!bets?.length) {
+          await editMsg(chatId, messageId, '📊 Sin apuestas hoy.', mainMenuKb())
+        } else {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const won   = bets.filter((b: any) => b.status === 'won')
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const lost  = bets.filter((b: any) => b.status === 'lost')
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const pend  = bets.filter((b: any) => b.status === 'pending')
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const settled = bets.filter((b: any) => b.status !== 'pending')
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const pl = settled.reduce((s: number, b: any) => s + (b.result_amount ?? 0), 0)
+          const plText = pl >= 0 ? `+€${pl.toFixed(2)}` : `-€${Math.abs(pl).toFixed(2)}`
+          await editMsg(chatId, messageId,
+            `📊 <b>Resumen de hoy</b>\n\n` +
+            `✅ Ganadas: <b>${won.length}</b>   ❌ Perdidas: <b>${lost.length}</b>   ⏳ Pendientes: <b>${pend.length}</b>\n` +
+            `💰 P&L: <b>${settled.length ? plText : '—'}</b>`,
+            mainMenuKb()
+          )
+        }
+        return NextResponse.json({ ok: true })
+      }
+
+      if (cbData === 'menu:ultimas') {
+        const { data: bets } = await supabase
+          .from('bets').select('*').eq('user_id', userId)
+          .order('created_at', { ascending: false }).limit(5)
+        if (!bets?.length) {
+          await editMsg(chatId, messageId, 'No hay apuestas registradas.', mainMenuKb())
+        } else {
+          const e: Record<string, string> = { pending: '⏳', won: '✅', lost: '❌', void: '↩️', cashout: '💸' }
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const list = bets.map((b: any) => {
+            const name = b.match !== 'Apuesta' ? b.match : `${b.pick} @ ${b.odds}`
+            const pl = b.result_amount != null
+              ? (b.result_amount >= 0 ? ` <b>+€${b.result_amount.toFixed(2)}</b>` : ` <b>-€${Math.abs(b.result_amount).toFixed(2)}</b>`) : ''
+            return `${e[b.status] || '?'} <b>${name}</b>${pl}`
+          }).join('\n')
+          await editMsg(chatId, messageId, `🔔 <b>Últimas 5 apuestas:</b>\n\n${list}`, mainMenuKb())
+        }
         return NextResponse.json({ ok: true })
       }
 
@@ -586,9 +673,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ ok: true })
       }
 
-      await sendMsg(chatId,
-        '📸 Envía una foto de tu apuesta, o:\n<b>ganada</b> | <b>perdida</b> | <b>anulada</b> | <b>cashout 50</b>'
-      )
+      await sendMsg(chatId, '🎯 ¿Qué quieres hacer?', mainMenuKb())
     }
 
     return NextResponse.json({ ok: true })
