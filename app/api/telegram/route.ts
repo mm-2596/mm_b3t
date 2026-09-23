@@ -45,6 +45,7 @@ async function answerCQ(id: string) {
 // ── Session ───────────────────────────────────────────────────────────────────
 interface SessionData {
   bk?: string
+  comp?: string
   betType?: string
   picks?: string[]
   odds?: number
@@ -76,6 +77,7 @@ async function clearSession(supabase: any, chatId: number) {
 
 // ── Keyboards ─────────────────────────────────────────────────────────────────
 const BOOKMAKERS = ['Bet365', 'Winamax', 'William Hill', 'Bwin', 'Betfair', 'Otro']
+const COMPETITIONS = ['Liga EA Sports', 'Copa del Rey', 'Champions League', 'Premier League', 'Bundesliga', 'MIX']
 const QUICK_PICKS = ['1', 'X', '2', '1X', 'X2', 'Over 2.5', 'Under 2.5', 'BTTS Sí', 'BTTS No', 'Handicap']
 const COMMON_ODDS = ['1.30', '1.50', '1.70', '1.85', '2.00', '2.25', '2.50', '3.00', '4.00']
 const COMMON_STAKES = ['5', '10', '15', '20', '30', '40', '50', '75', '100']
@@ -100,6 +102,16 @@ function bookmakersKb() {
     inline_keyboard: [
       BOOKMAKERS.slice(0, 3).map(b => ({ text: b, callback_data: `bk:${b}` })),
       BOOKMAKERS.slice(3).map(b => ({ text: b, callback_data: `bk:${b}` })),
+    ],
+  }
+}
+
+function competitionsKb() {
+  return {
+    inline_keyboard: [
+      COMPETITIONS.slice(0, 2).map(c => ({ text: c, callback_data: `cp:${c}` })),
+      COMPETITIONS.slice(2, 4).map(c => ({ text: c, callback_data: `cp:${c}` })),
+      COMPETITIONS.slice(4).map(c => ({ text: c, callback_data: `cp:${c}` })),
     ],
   }
 }
@@ -205,12 +217,25 @@ export async function POST(request: NextRequest) {
 
       const supabase = getSupabaseAdmin()
 
-      // ── Bookmaker selected → ask type ───────────────────────────────────
+      // ── Bookmaker selected → ask competition ────────────────────────────
       if (cbData.startsWith('bk:')) {
         const bk = cbData.slice(3)
-        await setSession(supabase, chatId, 'type', { bk, picks: [] })
+        await setSession(supabase, chatId, 'comp', { bk, picks: [] })
         await editMsg(chatId, messageId,
-          `🏦 <b>${bk}</b>\n\n¿Qué tipo de apuesta es?`,
+          `🏦 <b>${bk}</b>\n\n🏆 ¿Qué <b>competición</b>?`,
+          competitionsKb()
+        )
+        return NextResponse.json({ ok: true })
+      }
+
+      // ── Competition selected → ask type ─────────────────────────────────
+      if (cbData.startsWith('cp:')) {
+        const comp = cbData.slice(3)
+        const session = await getSession(supabase, chatId)
+        if (!session?.data.bk) return NextResponse.json({ ok: true })
+        await setSession(supabase, chatId, 'type', { ...session.data, comp })
+        await editMsg(chatId, messageId,
+          `🏦 <b>${session.data.bk}</b> · 🏆 <b>${comp}</b>\n\n¿Qué tipo de apuesta es?`,
           {
             inline_keyboard: [[
               { text: '🎯 Pick', callback_data: 'tp:pick' },
@@ -344,7 +369,7 @@ export async function POST(request: NextRequest) {
         const session = await getSession(supabase, chatId)
         if (!session?.data.bk) return NextResponse.json({ ok: true })
 
-        const { bk, betType, picks, odds, stake } = session.data
+        const { bk, comp, betType, picks, odds, stake } = session.data
         const settings = await getUserSettings(supabase, userId)
         const unitValue = settings?.unit_value || 10
         const units = Math.round((stake! / unitValue) * 100) / 100
@@ -356,7 +381,7 @@ export async function POST(request: NextRequest) {
 
         const { data: inserted, error } = await supabase.from('bets').insert({
           user_id: userId, date: today,
-          sport: 'Fútbol', competition: '',
+          sport: 'Fútbol', competition: comp || '',
           match: 'Apuesta', pick: pickStr,
           bookmaker: bk, odds, units, stake,
           status: 'pending', result_amount: null,
