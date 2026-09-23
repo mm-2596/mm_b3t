@@ -11,10 +11,30 @@ import {
   ArrowUpDown,
   BarChart3,
   Settings,
-  TrendingUp,
   LogOut,
   User,
 } from 'lucide-react'
+
+function WDLogo() {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" className="w-4 h-4" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <clipPath id="wdclip">
+          <rect width="16" height="16"/>
+        </clipPath>
+      </defs>
+      <g clipPath="url(#wdclip)" opacity="0.22">
+        <line x1="-2" y1="0" x2="10" y2="16" stroke="#34d399" strokeWidth="3"/>
+        <line x1="4"  y1="0" x2="16" y2="16" stroke="#34d399" strokeWidth="3"/>
+        <line x1="10" y1="0" x2="22" y2="16" stroke="#34d399" strokeWidth="3"/>
+        <line x1="18" y1="0" x2="6"  y2="16" stroke="#34d399" strokeWidth="3"/>
+        <line x1="12" y1="0" x2="0"  y2="16" stroke="#34d399" strokeWidth="3"/>
+        <line x1="24" y1="0" x2="12" y2="16" stroke="#34d399" strokeWidth="3"/>
+      </g>
+      <text x="8" y="11.5" textAnchor="middle" fontFamily="sans-serif" fontWeight="700" fontSize="9.5" fill="#34d399">W</text>
+    </svg>
+  )
+}
 
 const navigation = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
@@ -46,11 +66,11 @@ export function Sidebar() {
       {/* Logo */}
       <div className="flex items-center gap-3 px-6 py-5 border-b border-gray-700/50">
         <div className="w-8 h-8 rounded-lg bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center">
-          <TrendingUp className="w-4 h-4 text-emerald-400" />
+          <WDLogo />
         </div>
         <div>
-          <span className="font-bold text-gray-100 text-base tracking-tight">mm_b3t</span>
-          <p className="text-xs text-gray-500">Betting Tracker</p>
+          <span className="font-bold text-gray-100 text-base tracking-tight">Win &amp; Dine</span>
+          <p className="text-xs text-gray-500">by MM</p>
         </div>
       </div>
 

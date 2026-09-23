@@ -2,8 +2,8 @@ import type { Metadata } from 'next'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'mm_b3t — Betting Tracker',
-  description: 'Control profesional de apuestas deportivas',
+  title: 'Win & Dine',
+  description: 'Sports betting tracker by MM',
 }
 
 export default function RootLayout({
