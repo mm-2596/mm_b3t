@@ -151,13 +151,14 @@ function stakeKb() {
   return { inline_keyboard: rows }
 }
 
-function summaryText(bk: string, betType: string, picks: string[], odds: number, stake: number, units: number) {
+function summaryText(bk: string, comp: string, betType: string, picks: string[], odds: number, stake: number, units: number) {
   const profit = stake * (odds - 1)
   const total = stake + profit
   const typeLabel = betType === 'funbet' ? '🎉 Funbet' : '🎯 Pick'
   return (
     `📋 <b>Resumen de la apuesta</b>\n\n` +
     `🏦 ${bk} | ${typeLabel}\n` +
+    `🏆 <b>${comp}</b>\n` +
     `📌 Pick: <b>${picks.join(' + ')}</b>\n` +
     `📊 Cuota: <b>${odds}</b>\n` +
     `💵 Apostado: <b>€${stake.toFixed(2)}</b> (${units}u)\n` +
@@ -342,7 +343,7 @@ export async function POST(request: NextRequest) {
 
         await setSession(supabase, chatId, 'confirm', finalData)
         await editMsg(chatId, messageId,
-          summaryText(finalData.bk!, finalData.betType || 'pick', finalData.picks!, finalData.odds!, stake, units),
+          summaryText(finalData.bk!, finalData.comp || '', finalData.betType || 'pick', finalData.picks!, finalData.odds!, stake, units),
           {
             inline_keyboard: [[
               { text: '✅ Confirmar', callback_data: 'cf' },
@@ -622,7 +623,7 @@ export async function POST(request: NextRequest) {
         const finalData = { ...session.data, stake }
         await setSession(supabase, chatId, 'confirm', finalData)
         await sendMsg(chatId,
-          summaryText(finalData.bk!, finalData.betType || 'pick', finalData.picks!, finalData.odds!, stake, units),
+          summaryText(finalData.bk!, finalData.comp || '', finalData.betType || 'pick', finalData.picks!, finalData.odds!, stake, units),
           {
             inline_keyboard: [[
               { text: '✅ Confirmar', callback_data: 'cf' },

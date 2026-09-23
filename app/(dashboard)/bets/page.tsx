@@ -199,7 +199,9 @@ export default function BetsPage() {
                         </td>
                         <td className="px-4 py-3 max-w-xs">
                           <div className="text-sm text-gray-100 font-medium truncate">{bet.pick}</div>
-                          <div className="text-xs text-gray-500 truncate">{bet.match}</div>
+                          <div className="text-xs text-gray-500 truncate">
+                            {[bet.competition, bet.match !== 'Apuesta' ? bet.match : null].filter(Boolean).join(' · ')}
+                          </div>
                         </td>
                         <td className="px-4 py-3 text-sm text-gray-400">{bet.sport}</td>
                         <td className="px-4 py-3 text-sm text-gray-400">{bet.bookmaker}</td>
