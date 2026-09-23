@@ -11,7 +11,7 @@ import {
   formatCurrency, calcProfit, getStatusBg, STATUS_LABELS,
   SPORTS, BOOKMAKERS
 } from '@/lib/utils'
-import { Plus, Search, Filter, Pencil, Trash2, CheckCircle } from 'lucide-react'
+import { Plus, Search, Pencil, Trash2, CheckCircle, X, ChevronRight } from 'lucide-react'
 import type { Bet, BetStatus } from '@/lib/database.types'
 import { format } from 'date-fns'
 
@@ -42,6 +42,7 @@ export default function BetsPage() {
 
   const [showForm, setShowForm] = useState(false)
   const [editBet, setEditBet] = useState<Bet | undefined>()
+  const [detailBet, setDetailBet] = useState<Bet | null>(null)
   const [settlingBet, setSettlingBet] = useState<string | null>(null)
   const [settleStatus, setSettleStatus] = useState<BetStatus>('won')
   const [cashoutAmount, setCashoutAmount] = useState('')
@@ -192,7 +193,8 @@ export default function BetsPage() {
                     <>
                       <tr
                         key={bet.id}
-                        className="hover:bg-gray-700/20 transition-colors group"
+                        className="hover:bg-gray-700/20 transition-colors group cursor-pointer sm:cursor-default"
+                        onClick={() => { if (window.innerWidth < 640) setDetailBet(bet) }}
                       >
                         <td className="px-3 py-3 text-sm text-gray-400 whitespace-nowrap">
                           {format(new Date(bet.date + 'T00:00:00'), 'dd/MM/yy')}
@@ -319,6 +321,83 @@ export default function BetsPage() {
         unitValue={unitValue}
         title={editBet ? 'Editar Apuesta' : 'Nueva Apuesta'}
       />
+
+      {/* Bet Detail Bottom Sheet (mobile only) */}
+      {detailBet && (() => {
+        const b = detailBet
+        const profit = calcProfit(b)
+        return (
+          <>
+            <div
+              className="fixed inset-0 bg-black/60 z-40 sm:hidden"
+              onClick={() => setDetailBet(null)}
+            />
+            <div className="fixed bottom-0 left-0 right-0 z-50 sm:hidden rounded-t-2xl bg-gray-900 border-t border-gray-700/60 pb-8">
+              {/* Handle */}
+              <div className="flex justify-center pt-3 pb-1">
+                <div className="w-10 h-1 rounded-full bg-gray-600" />
+              </div>
+              {/* Header */}
+              <div className="flex items-center justify-between px-5 py-3 border-b border-gray-700/40">
+                <span className="font-semibold text-gray-100">{b.pick}</span>
+                <button onClick={() => setDetailBet(null)} className="p-1 text-gray-400">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              {/* Details */}
+              <div className="px-5 py-4 space-y-3">
+                {[
+                  ['Fecha',       format(new Date(b.date + 'T00:00:00'), 'dd/MM/yyyy')],
+                  ['Competición', b.competition || '—'],
+                  ['Partido',     b.match !== 'Apuesta' ? b.match : '—'],
+                  ['Deporte',     b.sport],
+                  ['Casa',        b.bookmaker],
+                  ['Cuota',       b.odds.toFixed(2)],
+                  ['Unidades',    `${b.units}u`],
+                  ['Stake',       formatCurrency(b.stake)],
+                ].map(([label, value]) => (
+                  <div key={label} className="flex justify-between text-sm">
+                    <span className="text-gray-400">{label}</span>
+                    <span className="text-gray-100 font-medium">{value}</span>
+                  </div>
+                ))}
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-400">Estado</span>
+                  <span className={`inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium ${getStatusBg(b.status)}`}>
+                    {STATUS_LABELS[b.status]}
+                  </span>
+                </div>
+                {b.status !== 'pending' && (
+                  <div className="flex justify-between text-sm border-t border-gray-700/40 pt-3">
+                    <span className="text-gray-400">P&L</span>
+                    <span className={`font-bold text-base ${profit >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                      {profit >= 0 ? '+' : ''}{formatCurrency(profit)}
+                    </span>
+                  </div>
+                )}
+              </div>
+              {/* Actions */}
+              <div className="flex gap-3 px-5">
+                <Button
+                  variant="outline"
+                  className="flex-1"
+                  onClick={() => { handleEdit(b); setDetailBet(null) }}
+                >
+                  <Pencil className="w-4 h-4 mr-2" /> Editar
+                </Button>
+                {b.status === 'pending' && (
+                  <Button
+                    className="flex-1"
+                    onClick={() => { setSettlingBet(b.id); setDetailBet(null) }}
+                  >
+                    <CheckCircle className="w-4 h-4 mr-2" /> Liquidar
+                  </Button>
+                )}
+              </div>
+            </div>
+          </>
+        )
+      })()}
     </div>
   )
 }
