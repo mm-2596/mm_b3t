@@ -17,21 +17,8 @@ import {
 
 function WDLogo() {
   return (
-    <svg viewBox="0 0 16 16" fill="none" className="w-4 h-4" xmlns="http://www.w3.org/2000/svg">
-      <defs>
-        <clipPath id="wdclip">
-          <rect width="16" height="16"/>
-        </clipPath>
-      </defs>
-      <g clipPath="url(#wdclip)" opacity="0.22">
-        <line x1="-2" y1="0" x2="10" y2="16" stroke="#34d399" strokeWidth="3"/>
-        <line x1="4"  y1="0" x2="16" y2="16" stroke="#34d399" strokeWidth="3"/>
-        <line x1="10" y1="0" x2="22" y2="16" stroke="#34d399" strokeWidth="3"/>
-        <line x1="18" y1="0" x2="6"  y2="16" stroke="#34d399" strokeWidth="3"/>
-        <line x1="12" y1="0" x2="0"  y2="16" stroke="#34d399" strokeWidth="3"/>
-        <line x1="24" y1="0" x2="12" y2="16" stroke="#34d399" strokeWidth="3"/>
-      </g>
-      <text x="8" y="11.5" textAnchor="middle" fontFamily="sans-serif" fontWeight="700" fontSize="9.5" fill="#34d399">W</text>
+    <svg viewBox="0 0 512 512" className="w-5 h-5" xmlns="http://www.w3.org/2000/svg" aria-label="Win &amp; Dine">
+      <path fill="#34d399" fillRule="evenodd" d="M52 24 H238 C383 24 472 116 472 256 C472 396 383 488 238 488 H52 Q40 488 40 476 V36 Q40 24 52 24 Z M80 154 Q80 147 83.674 152.959 L158.326 274.041 Q162 280 165.781 274.109 L244.219 151.891 Q248 146 251.812 151.871 L331.188 274.129 Q335 280 338.706 274.062 L414.294 152.938 Q418 147 418 154 L418 253 Q418 260 414.339 265.966 L340.661 386.034 Q337 392 333.147 386.156 L251.853 262.844 Q248 257 244.208 262.884 L164.792 386.116 Q161 392 157.339 386.034 L83.661 265.966 Q80 260 80 253 Z"/>
     </svg>
   )
 }
