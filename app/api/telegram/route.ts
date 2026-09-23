@@ -50,6 +50,8 @@ interface SessionData {
   odds?: number
   stake?: number
   betId?: string
+  status?: string
+  cashoutAmount?: number
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -138,6 +140,25 @@ function summaryText(bk: string, betType: string, picks: string[], odds: number,
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function settleBet(supabase: any, chatId: number, bet: any, status: string, cashoutAmount: number | null) {
+  let resultAmount: number | null = null
+  if (status === 'won') resultAmount = bet.stake * (bet.odds - 1)
+  else if (status === 'lost') resultAmount = -bet.stake
+  else if (status === 'void') resultAmount = 0
+  else if (status === 'cashout' && cashoutAmount !== null) resultAmount = cashoutAmount - bet.stake
+
+  await supabase.from('bets').update({ status, result_amount: resultAmount }).eq('id', bet.id)
+
+  const e: Record<string, string> = { won: '✅', lost: '❌', void: '↩️', cashout: '💸' }
+  const profitText = resultAmount !== null
+    ? (resultAmount >= 0 ? `+€${resultAmount.toFixed(2)}` : `-€${Math.abs(resultAmount).toFixed(2)}`) : ''
+  const label = bet.match !== 'Apuesta' ? bet.match : `${bet.pick} @ ${bet.odds}`
+  await sendMsg(chatId,
+    `${e[status]} <b>${label}</b> — ${status}${profitText ? ` | ${profitText}` : ''}`
+  )
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function getUserSettings(supabase: any, userId: string) {
   const { data } = await supabase.from('settings').select('*').eq('user_id', userId).single()
@@ -354,6 +375,21 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ ok: true })
       }
 
+      // ── Settle specific bet ─────────────────────────────────────────────
+      if (cbData.startsWith('sb:')) {
+        const betId = cbData.slice(3)
+        const session = await getSession(supabase, chatId)
+        if (!session?.data.status) return NextResponse.json({ ok: true })
+
+        const { data: bet } = await supabase.from('bets').select('*').eq('id', betId).single()
+        if (!bet) return NextResponse.json({ ok: true })
+
+        await clearSession(supabase, chatId)
+        await settleBet(supabase, chatId, bet, session.data.status as string, session.data.cashoutAmount as number | null ?? null)
+        await editMsg(chatId, messageId, '✅')
+        return NextResponse.json({ ok: true })
+      }
+
       if (cbData === 'cancel') {
         await clearSession(supabase, chatId)
         await editMsg(chatId, messageId, '❌ Cancelado.')
@@ -516,24 +552,36 @@ export async function POST(request: NextRequest) {
       }
 
       if (newStatus) {
-        const pendingBet = await getLastPendingBet(supabase, userId)
-        if (!pendingBet) {
+        const { data: pendingBets } = await supabase
+          .from('bets').select('*').eq('user_id', userId).eq('status', 'pending')
+          .order('created_at', { ascending: false }).limit(8)
+
+        if (!pendingBets?.length) {
           await sendMsg(chatId, '⚠️ No hay apuestas pendientes.')
           return NextResponse.json({ ok: true })
         }
-        let resultAmount: number | null = null
-        if (newStatus === 'won') resultAmount = pendingBet.stake * (pendingBet.odds - 1)
-        else if (newStatus === 'lost') resultAmount = -pendingBet.stake
-        else if (newStatus === 'void') resultAmount = 0
-        else if (newStatus === 'cashout' && cashoutAmount !== null) resultAmount = cashoutAmount - pendingBet.stake
 
-        await supabase.from('bets').update({ status: newStatus, result_amount: resultAmount }).eq('id', pendingBet.id)
+        // If only one pending bet, settle directly
+        if (pendingBets.length === 1) {
+          await settleBet(supabase, chatId, pendingBets[0], newStatus, cashoutAmount)
+          return NextResponse.json({ ok: true })
+        }
 
-        const e: Record<string, string> = { won: '✅', lost: '❌', void: '↩️', cashout: '💸' }
-        const profitText = resultAmount !== null
-          ? (resultAmount >= 0 ? `+€${resultAmount.toFixed(2)}` : `-€${Math.abs(resultAmount).toFixed(2)}`) : ''
+        // Multiple pending — store intent and show list
+        await setSession(supabase, chatId, 'selecting_bet', {
+          status: newStatus,
+          cashoutAmount: cashoutAmount ?? undefined,
+        })
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const buttons = pendingBets.map((b: any) => [{
+          text: `${b.match !== 'Apuesta' ? b.match + ' — ' : ''}${b.pick} @ ${b.odds} | €${b.stake} | ${b.bookmaker}`,
+          callback_data: `sb:${b.id}`,
+        }])
+        buttons.push([{ text: '❌ Cancelar', callback_data: 'cancel' }])
+        const statusLabel: Record<string, string> = { won: '✅ Ganada', lost: '❌ Perdida', void: '↩️ Anulada', cashout: '💸 Cashout' }
         await sendMsg(chatId,
-          `${e[newStatus]} <b>${pendingBet.match}</b> — ${newStatus}${profitText ? ` | ${profitText}` : ''}`
+          `${statusLabel[newStatus]} — ¿Cuál apuesta?`,
+          { inline_keyboard: buttons }
         )
         return NextResponse.json({ ok: true })
       }
