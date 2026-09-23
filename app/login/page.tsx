@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
-import { TrendingUp, Eye, EyeOff } from 'lucide-react'
+import { Eye, EyeOff } from 'lucide-react'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -39,11 +39,11 @@ export default function LoginPage() {
       <div className="w-full max-w-sm">
         {/* Logo */}
         <div className="flex flex-col items-center mb-8">
-          <div className="w-12 h-12 rounded-2xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center mb-4">
-            <TrendingUp className="w-6 h-6 text-emerald-400" />
+          <div className="w-14 h-14 rounded-2xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center mb-4">
+            <img src="/mark.svg" alt="Win & Dine" className="w-8 h-8" />
           </div>
-          <h1 className="text-2xl font-bold text-gray-100">mm_b3t</h1>
-          <p className="text-sm text-gray-400 mt-1">Betting Tracker</p>
+          <h1 className="text-2xl font-bold text-gray-100">Win &amp; Dine</h1>
+          <p className="text-sm text-gray-400 mt-1">Betting Tracker <span className="text-emerald-500/70">by MM</span></p>
         </div>
 
         {/* Card */}
