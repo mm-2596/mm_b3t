@@ -114,8 +114,8 @@ export default function BetsPage() {
       </div>
 
       {/* Filters */}
-      <div className="flex gap-3 flex-wrap">
-        <div className="relative flex-1 min-w-48">
+      <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
+        <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
           <input
             className="w-full rounded-lg border border-gray-600 bg-gray-700/50 text-gray-100 text-sm pl-9 pr-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500 placeholder:text-gray-500"
@@ -168,20 +168,20 @@ export default function BetsPage() {
         </div>
       ) : (
         <div className="rounded-xl border border-gray-700/50 bg-gray-800/30 overflow-hidden">
-          <div className="overflow-x-auto">
+          <div className="overflow-x-hidden">
             <table className="w-full">
               <thead>
                 <tr className="border-b border-gray-700/50">
-                  <th className="text-left px-4 py-3 text-xs font-medium text-gray-400 uppercase">Fecha</th>
-                  <th className="text-left px-4 py-3 text-xs font-medium text-gray-400 uppercase">Pick</th>
-                  <th className="text-left px-4 py-3 text-xs font-medium text-gray-400 uppercase">Deporte</th>
-                  <th className="text-left px-4 py-3 text-xs font-medium text-gray-400 uppercase">Casa</th>
-                  <th className="text-left px-4 py-3 text-xs font-medium text-gray-400 uppercase">Cuota</th>
-                  <th className="text-left px-4 py-3 text-xs font-medium text-gray-400 uppercase">Ud.</th>
-                  <th className="text-left px-4 py-3 text-xs font-medium text-gray-400 uppercase">Stake</th>
-                  <th className="text-left px-4 py-3 text-xs font-medium text-gray-400 uppercase">Estado</th>
-                  <th className="text-right px-4 py-3 text-xs font-medium text-gray-400 uppercase">P&L</th>
-                  <th className="text-right px-4 py-3 text-xs font-medium text-gray-400 uppercase">Acc.</th>
+                  <th className="text-left px-3 py-3 text-xs font-medium text-gray-400 uppercase">Fecha</th>
+                  <th className="text-left px-3 py-3 text-xs font-medium text-gray-400 uppercase">Pick</th>
+                  <th className="hidden md:table-cell text-left px-3 py-3 text-xs font-medium text-gray-400 uppercase">Deporte</th>
+                  <th className="hidden sm:table-cell text-left px-3 py-3 text-xs font-medium text-gray-400 uppercase">Casa</th>
+                  <th className="hidden sm:table-cell text-left px-3 py-3 text-xs font-medium text-gray-400 uppercase">Cuota</th>
+                  <th className="hidden md:table-cell text-left px-3 py-3 text-xs font-medium text-gray-400 uppercase">Ud.</th>
+                  <th className="hidden md:table-cell text-left px-3 py-3 text-xs font-medium text-gray-400 uppercase">Stake</th>
+                  <th className="text-left px-3 py-3 text-xs font-medium text-gray-400 uppercase">Estado</th>
+                  <th className="text-right px-3 py-3 text-xs font-medium text-gray-400 uppercase">P&L</th>
+                  <th className="hidden sm:table-cell text-right px-3 py-3 text-xs font-medium text-gray-400 uppercase">Acc.</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-700/20">
@@ -194,26 +194,26 @@ export default function BetsPage() {
                         key={bet.id}
                         className="hover:bg-gray-700/20 transition-colors group"
                       >
-                        <td className="px-4 py-3 text-sm text-gray-400 whitespace-nowrap">
+                        <td className="px-3 py-3 text-sm text-gray-400 whitespace-nowrap">
                           {format(new Date(bet.date + 'T00:00:00'), 'dd/MM/yy')}
                         </td>
-                        <td className="px-4 py-3 max-w-xs">
+                        <td className="px-3 py-3 min-w-0">
                           <div className="text-sm text-gray-100 font-medium truncate">{bet.pick}</div>
                           <div className="text-xs text-gray-500 truncate">
                             {[bet.competition, bet.match !== 'Apuesta' ? bet.match : null].filter(Boolean).join(' · ')}
                           </div>
                         </td>
-                        <td className="px-4 py-3 text-sm text-gray-400">{bet.sport}</td>
-                        <td className="px-4 py-3 text-sm text-gray-400">{bet.bookmaker}</td>
-                        <td className="px-4 py-3 text-sm text-gray-300 font-mono">{bet.odds.toFixed(2)}</td>
-                        <td className="px-4 py-3 text-sm text-gray-300">{bet.units}u</td>
-                        <td className="px-4 py-3 text-sm text-gray-300">{formatCurrency(bet.stake)}</td>
-                        <td className="px-4 py-3">
+                        <td className="hidden md:table-cell px-3 py-3 text-sm text-gray-400">{bet.sport}</td>
+                        <td className="hidden sm:table-cell px-3 py-3 text-sm text-gray-400">{bet.bookmaker}</td>
+                        <td className="hidden sm:table-cell px-3 py-3 text-sm text-gray-300 font-mono">{bet.odds.toFixed(2)}</td>
+                        <td className="hidden md:table-cell px-3 py-3 text-sm text-gray-300">{bet.units}u</td>
+                        <td className="hidden md:table-cell px-3 py-3 text-sm text-gray-300">{formatCurrency(bet.stake)}</td>
+                        <td className="px-3 py-3">
                           <span className={`inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium ${getStatusBg(bet.status)}`}>
                             {STATUS_LABELS[bet.status]}
                           </span>
                         </td>
-                        <td className="px-4 py-3 text-right">
+                        <td className="px-3 py-3 text-right">
                           {bet.status === 'pending' ? (
                             <span className="text-sm text-gray-500">—</span>
                           ) : (
@@ -222,7 +222,7 @@ export default function BetsPage() {
                             </span>
                           )}
                         </td>
-                        <td className="px-4 py-3">
+                        <td className="hidden sm:table-cell px-3 py-3">
                           <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                             {bet.status === 'pending' && (
                               <button
