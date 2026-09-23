@@ -1,0 +1,33 @@
+WIN & DINE — Logo refinado + favicon
+
+CONCEPTO
+La W aparece recortada dentro de una D. Las esquinas de la D y los vértices
+de la W están suavizados. El nombre completo conserva el ampersand.
+Color de marca exacto: emerald-400, #34D399. Fondo oscuro: #101915.
+
+LOGOS
+mark.svg / mark.png: símbolo WD transparente, con hueco real en la W.
+logo-on-dark.svg / .png: logo vertical transparente con texto claro para fondos oscuros.
+logo-on-light.svg / .png: logo vertical transparente con texto oscuro para fondos claros.
+logo-horizontal-on-dark.svg: composición horizontal para cabeceras oscuras.
+logo-horizontal-on-light.svg: composición horizontal para cabeceras claras.
+La tipografía se ha convertido en trazados: los SVG no dependen de fuentes externas.
+
+FAVICON E ICONOS
+favicon.svg: favicon escalable, con fondo oscuro y esquinas redondeadas.
+favicon.ico: incluye resoluciones de 16, 32, 48 y 64 px.
+favicon-16x16.png / favicon-32x32.png / favicon-48x48.png / favicon-64x64.png.
+icon-192.png / icon-512.png: iconos de aplicación.
+apple-touch-icon.png: icono opaco 180 × 180 para pantalla de inicio de iOS.
+El fondo oscuro mantiene la W legible tanto en pestañas claras como oscuras.
+
+INSTALACIÓN EN UNA WEB
+1. Copia los archivos de favicon y apple-touch-icon.png a public/ (o a la raíz pública).
+2. Añade el contenido de INSTALL.html dentro del <head> de la página.
+3. Si tu proyecto usa rutas de icono automáticas, sustituye sus iconos existentes
+   para evitar que otra configuración tenga prioridad sobre estas etiquetas.
+4. Si sigue apareciendo el icono anterior, prueba una pestaña privada; el navegador
+   puede conservar el favicon en caché.
+
+La vista previa ilustra el diseño y el favicon a tamaño real de 16 px en dos temas.
+Usa los archivos de logo y favicon, no la vista previa, como recursos de producción.
