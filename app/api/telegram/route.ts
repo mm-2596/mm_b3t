@@ -42,13 +42,13 @@ async function answerCQ(id: string) {
   })
 }
 
-// ── Keyboard builders ─────────────────────────────────────────────────────────
-// State is encoded entirely in callback_data — no database needed for button flow
-// Format: od:{odds}|{bookmaker}  /  st:{stake}|{bookmaker}|{odds}  /  cf:{bookmaker}|{odds}|{stake}
+// ── Keyboards ─────────────────────────────────────────────────────────────────
+// State flows through callback_data:
+//   bk:{bk} → pk:{pick}|{bk} → od:{odds}|{pick}|{bk} → st:{stake}|{pick}|{bk}|{odds} → cf:{bk}|{odds}|{stake}|{pick}
 
 const BOOKMAKERS = ['Bet365', 'Winamax', 'William Hill', 'Bwin', 'Betfair', 'Otro']
 const COMMON_ODDS = ['1.30', '1.50', '1.70', '1.85', '2.00', '2.25', '2.50', '3.00']
-const COMMON_STAKES = ['10', '20', '30', '40', '50', '75', '100', '150']
+const COMMON_STAKES = ['5', '10', '20', '30', '40', '50', '75', '100']
 
 function bookmakersKb() {
   return {
@@ -59,53 +59,64 @@ function bookmakersKb() {
   }
 }
 
-function oddsKb(bookmaker: string) {
+function pickKb(bk: string) {
+  const picks = ['1', 'X', '2', '1X', 'X2', 'Over 2.5', 'Under 2.5', 'BTTS Sí', 'BTTS No', 'Handicap']
+  return {
+    inline_keyboard: [
+      picks.slice(0, 5).map(p => ({ text: p, callback_data: `pk:${p}|${bk}` })),
+      picks.slice(5, 8).map(p => ({ text: p, callback_data: `pk:${p}|${bk}` })),
+      picks.slice(8).map(p => ({ text: p, callback_data: `pk:${p}|${bk}` })),
+      [{ text: '✏️ Otro pick', callback_data: `pk_c:${bk}` }],
+    ],
+  }
+}
+
+function oddsKb(pick: string, bk: string) {
   const rows = []
   for (let i = 0; i < COMMON_ODDS.length; i += 4) {
     rows.push(COMMON_ODDS.slice(i, i + 4).map(o => ({
       text: o,
-      callback_data: `od:${o}|${bookmaker}`,
+      callback_data: `od:${o}|${pick}|${bk}`,
     })))
   }
-  rows.push([{ text: '✏️ Otra cuota', callback_data: `od_c:${bookmaker}` }])
+  rows.push([{ text: '✏️ Otra cuota', callback_data: `od_c:${pick}|${bk}` }])
   return { inline_keyboard: rows }
 }
 
-function stakeKb(bookmaker: string, odds: string) {
+function stakeKb(pick: string, bk: string, odds: string) {
   const rows = []
   for (let i = 0; i < COMMON_STAKES.length; i += 4) {
     rows.push(COMMON_STAKES.slice(i, i + 4).map(s => ({
       text: `${s}€`,
-      callback_data: `st:${s}|${bookmaker}|${odds}`,
+      callback_data: `st:${s}|${pick}|${bk}|${odds}`,
     })))
   }
-  rows.push([{ text: '✏️ Otro importe', callback_data: `st_c:${bookmaker}|${odds}` }])
+  rows.push([{ text: '✏️ Otro importe', callback_data: `st_c:${pick}|${bk}|${odds}` }])
   return { inline_keyboard: rows }
 }
 
-function confirmKb(bookmaker: string, odds: string, stake: string) {
+function confirmKb(bk: string, odds: string, stake: string, pick: string) {
   return {
     inline_keyboard: [[
-      { text: '✅ Confirmar', callback_data: `cf:${bookmaker}|${odds}|${stake}` },
+      { text: '✅ Confirmar', callback_data: `cf:${bk}|${odds}|${stake}|${pick}` },
       { text: '❌ Cancelar', callback_data: 'cancel' },
     ]],
   }
 }
 
-function summaryText(bookmaker: string, odds: number, stake: number) {
+function summaryText(bk: string, pick: string, odds: number, stake: number, units: number) {
   const profit = stake * (odds - 1)
-  const total = stake + profit
   return (
     `📋 <b>Resumen</b>\n\n` +
-    `🏦 ${bookmaker}\n` +
+    `🏦 ${bk}\n` +
+    `📌 Pick: <b>${pick}</b>\n` +
     `📊 Cuota: <b>${odds}</b>\n` +
-    `💵 Apostado: <b>€${stake.toFixed(2)}</b>\n` +
-    `💰 Ganarías: <b>+€${profit.toFixed(2)}</b>\n` +
-    `🏆 Total cobras: <b>€${total.toFixed(2)}</b>`
+    `💵 Apostado: <b>€${stake.toFixed(2)}</b> (${units}u)\n` +
+    `💰 Ganarías: <b>+€${profit.toFixed(2)}</b>`
   )
 }
 
-// ── Session helpers (only needed for ✏️ custom values) ───────────────────────
+// ── Session helpers ───────────────────────────────────────────────────────────
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function getSession(supabase: any, chatId: number) {
   try {
@@ -120,17 +131,21 @@ async function setSession(supabase: any, chatId: number, step: string, data: Rec
     await supabase.from('bot_sessions').upsert({
       chat_id: chatId, step, data, updated_at: new Date().toISOString(),
     })
-  } catch { /* graceful — bot_sessions optional */ }
+  } catch { /* graceful */ }
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function clearSession(supabase: any, chatId: number) {
-  try {
-    await supabase.from('bot_sessions').delete().eq('chat_id', chatId)
-  } catch { /* graceful */ }
+  try { await supabase.from('bot_sessions').delete().eq('chat_id', chatId) }
+  catch { /* graceful */ }
 }
 
-// ── Last pending bet ──────────────────────────────────────────────────────────
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function getUserSettings(supabase: any, userId: string) {
+  const { data } = await supabase.from('settings').select('*').eq('user_id', userId).single()
+  return data
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function getLastPendingBet(supabase: any, userId: string) {
   const { data } = await supabase
@@ -156,92 +171,130 @@ export async function POST(request: NextRequest) {
 
       const supabase = getSupabaseAdmin()
 
-      // ── Step 1: bookmaker selected → show odds ──────────────────────────
+      // Step 1: bookmaker → pick
       if (cbData.startsWith('bk:')) {
-        const bookmaker = cbData.slice(3)
+        const bk = cbData.slice(3)
         await editMsg(chatId, messageId,
-          `🏦 <b>${bookmaker}</b>\n\n¿Cuál es la <b>cuota</b>?`,
-          oddsKb(bookmaker)
+          `🏦 <b>${bk}</b>\n\n¿Cuál es tu <b>pick</b>?`,
+          pickKb(bk)
         )
         return NextResponse.json({ ok: true })
       }
 
-      // ── Step 2: odds selected → show stakes ────────────────────────────
+      // Step 2: pick → odds
+      if (cbData.startsWith('pk:')) {
+        const [pick, bk] = cbData.slice(3).split('|')
+        await editMsg(chatId, messageId,
+          `🏦 <b>${bk}</b> | Pick: <b>${pick}</b>\n\n¿Cuál es la <b>cuota</b>?`,
+          oddsKb(pick, bk)
+        )
+        return NextResponse.json({ ok: true })
+      }
+
+      // Custom pick input
+      if (cbData.startsWith('pk_c:')) {
+        const bk = cbData.slice(5)
+        await setSession(supabase, chatId, 'typing_pick', { bk })
+        await editMsg(chatId, messageId,
+          `🏦 <b>${bk}</b>\n\n✏️ Escribe tu pick (ej: <code>Córners Over 9.5</code>):`
+        )
+        return NextResponse.json({ ok: true })
+      }
+
+      // Step 3: odds → stake
       if (cbData.startsWith('od:')) {
-        const [oddsStr, bookmaker] = cbData.slice(3).split('|')
-        const odds = parseFloat(oddsStr)
+        const [odds, pick, bk] = cbData.slice(3).split('|')
         await editMsg(chatId, messageId,
-          `🏦 <b>${bookmaker}</b> | Cuota: <b>${odds}</b>\n\n¿Cuánto <b>dinero</b> apuestas?`,
-          stakeKb(bookmaker, oddsStr)
+          `🏦 <b>${bk}</b> | ${pick} @ <b>${odds}</b>\n\n¿Cuánto <b>dinero</b> apuestas?`,
+          stakeKb(pick, bk, odds)
         )
         return NextResponse.json({ ok: true })
       }
 
-      // ── Step 3: stake selected → show summary + confirm ────────────────
+      // Custom odds input
+      if (cbData.startsWith('od_c:')) {
+        const [pick, bk] = cbData.slice(5).split('|')
+        await setSession(supabase, chatId, 'typing_odds', { pick, bk })
+        await editMsg(chatId, messageId,
+          `🏦 <b>${bk}</b> | Pick: <b>${pick}</b>\n\n✏️ Escribe la cuota (ej: <code>1.75</code>):`
+        )
+        return NextResponse.json({ ok: true })
+      }
+
+      // Step 4: stake → summary + confirm
       if (cbData.startsWith('st:')) {
-        const [stakeStr, bookmaker, oddsStr] = cbData.slice(3).split('|')
+        const [stakeStr, pick, bk, oddsStr] = cbData.slice(3).split('|')
         const odds = parseFloat(oddsStr)
         const stake = parseFloat(stakeStr)
+        const settings = await getUserSettings(supabase, userId)
+        const unitValue = settings?.unit_value || 10
+        const units = Math.round((stake / unitValue) * 100) / 100
         await editMsg(chatId, messageId,
-          summaryText(bookmaker, odds, stake),
-          confirmKb(bookmaker, oddsStr, stakeStr)
+          summaryText(bk, pick, odds, stake, units),
+          confirmKb(bk, oddsStr, stakeStr, pick)
         )
         return NextResponse.json({ ok: true })
       }
 
-      // ── Step 4: confirm → register bet ────────────────────────────────
+      // Custom stake input
+      if (cbData.startsWith('st_c:')) {
+        const [pick, bk, odds] = cbData.slice(5).split('|')
+        await setSession(supabase, chatId, 'typing_stake', { pick, bk, odds })
+        await editMsg(chatId, messageId,
+          `🏦 <b>${bk}</b> | ${pick} @ <b>${odds}</b>\n\n✏️ Escribe el importe en euros (ej: <code>25</code>):`
+        )
+        return NextResponse.json({ ok: true })
+      }
+
+      // Step 5: confirm → register, then ask for match name
       if (cbData.startsWith('cf:')) {
-        const [bookmaker, oddsStr, stakeStr] = cbData.slice(3).split('|')
+        const [bk, oddsStr, stakeStr, pick] = cbData.slice(3).split('|')
         const odds = parseFloat(oddsStr)
         const stake = parseFloat(stakeStr)
+        const settings = await getUserSettings(supabase, userId)
+        const unitValue = settings?.unit_value || 10
+        const units = Math.round((stake / unitValue) * 100) / 100
         const profit = stake * (odds - 1)
         const today = new Date().toISOString().split('T')[0]
 
-        const { error } = await supabase.from('bets').insert({
+        const { data: inserted, error } = await supabase.from('bets').insert({
           user_id: userId, date: today,
           sport: 'Fútbol', competition: '',
-          match: 'Apuesta', pick: '',
-          bookmaker, odds, units: 1, stake,
+          match: 'Apuesta', pick,
+          bookmaker: bk, odds, units, stake,
           status: 'pending', result_amount: null, notes: null,
-        })
+        }).select('id').single()
 
         if (error) {
           await editMsg(chatId, messageId, `❌ Error al guardar: ${error.message}`)
-        } else {
-          await editMsg(chatId, messageId,
-            `✅ <b>¡Registrada!</b>\n\n` +
-            `🏦 ${bookmaker} @ <b>${odds}</b>\n` +
-            `💵 €${stake.toFixed(2)} apostado → <b>+€${profit.toFixed(2)}</b> si gana\n\n` +
-            `Cuando sepas el resultado:\n<b>ganada</b> ✅  <b>perdida</b> ❌  <b>anulada</b> ↩️  <b>cashout 50</b> 💸`
-          )
+          return NextResponse.json({ ok: true })
         }
+
+        // Store bet id to update match name
+        await setSession(supabase, chatId, 'typing_match', { betId: inserted.id })
+
+        await editMsg(chatId, messageId,
+          `✅ <b>¡Registrada!</b> ${bk} | ${pick} @ ${odds} | €${stake.toFixed(2)} (${units}u) → <b>+€${profit.toFixed(2)}</b>\n\n` +
+          `📝 ¿Cuál es el <b>partido</b>? Escribe el nombre o toca Saltar:`
+        )
+        await sendMsg(chatId, '¿Nombre del partido?', {
+          inline_keyboard: [[{ text: '⏭️ Saltar', callback_data: 'skip_match' }]],
+        })
         return NextResponse.json({ ok: true })
       }
 
-      // ── Cancel ────────────────────────────────────────────────────────
+      // Skip match name
+      if (cbData === 'skip_match') {
+        await clearSession(supabase, chatId)
+        await editMsg(chatId, messageId,
+          `⏭️ Listo. Cuando sepas el resultado:\n<b>ganada</b> ✅  <b>perdida</b> ❌  <b>anulada</b> ↩️  <b>cashout 50</b> 💸`
+        )
+        return NextResponse.json({ ok: true })
+      }
+
       if (cbData === 'cancel') {
         await clearSession(supabase, chatId)
         await editMsg(chatId, messageId, '❌ Cancelado.')
-        return NextResponse.json({ ok: true })
-      }
-
-      // ── Custom odds input (from bot_sessions) ─────────────────────────
-      if (cbData.startsWith('od_c:')) {
-        const bookmaker = cbData.slice(5)
-        await setSession(supabase, chatId, 'typing_odds', { bookmaker })
-        await editMsg(chatId, messageId,
-          `🏦 <b>${bookmaker}</b>\n\n✏️ Escribe la cuota (ej: <code>1.75</code>):`
-        )
-        return NextResponse.json({ ok: true })
-      }
-
-      // ── Custom stake input (from bot_sessions) ────────────────────────
-      if (cbData.startsWith('st_c:')) {
-        const [bookmaker, oddsStr] = cbData.slice(5).split('|')
-        await setSession(supabase, chatId, 'typing_stake', { bookmaker, odds: oddsStr })
-        await editMsg(chatId, messageId,
-          `🏦 <b>${bookmaker}</b> | Cuota: <b>${oddsStr}</b>\n\n✏️ Escribe el importe en euros (ej: <code>25</code>):`
-        )
         return NextResponse.json({ ok: true })
       }
 
@@ -283,8 +336,8 @@ export async function POST(request: NextRequest) {
       } else {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const list = bets.map((b: any, i: number) =>
-          `${i + 1}. ${b.bookmaker} @ ${b.odds} | €${b.stake}`
-        ).join('\n')
+          `${i + 1}. <b>${b.match}</b> — ${b.pick} @ ${b.odds} | €${b.stake} (${b.units}u) — ${b.bookmaker}`
+        ).join('\n\n')
         await sendMsg(chatId, `📋 <b>Pendientes:</b>\n\n${list}`)
       }
       return NextResponse.json({ ok: true })
@@ -295,11 +348,11 @@ export async function POST(request: NextRequest) {
         .from('bets').select('*').eq('user_id', userId)
         .order('created_at', { ascending: false }).limit(1).single()
       if (!bet) {
-        await sendMsg(chatId, 'No hay apuestas registradas aún.')
+        await sendMsg(chatId, 'No hay apuestas aún.')
       } else {
         const e: Record<string, string> = { pending: '⏳', won: '✅', lost: '❌', void: '↩️', cashout: '💸' }
         await sendMsg(chatId,
-          `${e[bet.status] || '?'} ${bet.bookmaker} @ ${bet.odds} | €${bet.stake}\nEstado: <b>${bet.status}</b>`
+          `${e[bet.status] || '?'} <b>${bet.match}</b>\n${bet.pick} @ ${bet.odds} | €${bet.stake} (${bet.units}u) — ${bet.bookmaker}\nEstado: <b>${bet.status}</b>`
         )
       }
       return NextResponse.json({ ok: true })
@@ -315,33 +368,59 @@ export async function POST(request: NextRequest) {
     if (message.text) {
       const session = await getSession(supabase, chatId)
 
+      // Custom pick
+      if (session?.step === 'typing_pick') {
+        const { bk } = session.data as { bk: string }
+        await clearSession(supabase, chatId)
+        await sendMsg(chatId,
+          `🏦 <b>${bk}</b> | Pick: <b>${rawText}</b>\n\n¿Cuál es la <b>cuota</b>?`,
+          oddsKb(rawText, bk)
+        )
+        return NextResponse.json({ ok: true })
+      }
+
+      // Custom odds
       if (session?.step === 'typing_odds') {
         const odds = parseFloat(rawText.replace(',', '.'))
         if (isNaN(odds) || odds < 1.01 || odds > 100) {
           await sendMsg(chatId, '❌ Cuota inválida. Ej: <code>1.75</code>')
           return NextResponse.json({ ok: true })
         }
-        const { bookmaker } = session.data as { bookmaker: string }
-        const oddsStr = String(odds)
+        const { pick, bk } = session.data as { pick: string; bk: string }
         await clearSession(supabase, chatId)
         await sendMsg(chatId,
-          `🏦 <b>${bookmaker}</b> | Cuota: <b>${odds}</b>\n\n¿Cuánto <b>dinero</b> apuestas?`,
-          stakeKb(bookmaker, oddsStr)
+          `🏦 <b>${bk}</b> | ${pick} @ <b>${odds}</b>\n\n¿Cuánto <b>dinero</b> apuestas?`,
+          stakeKb(pick, bk, String(odds))
         )
         return NextResponse.json({ ok: true })
       }
 
+      // Custom stake
       if (session?.step === 'typing_stake') {
         const stake = parseFloat(rawText.replace(',', '.'))
         if (isNaN(stake) || stake <= 0) {
           await sendMsg(chatId, '❌ Importe inválido. Ej: <code>25</code>')
           return NextResponse.json({ ok: true })
         }
-        const { bookmaker, odds } = session.data as { bookmaker: string; odds: string }
+        const { pick, bk, odds } = session.data as { pick: string; bk: string; odds: string }
+        const settings = await getUserSettings(supabase, userId)
+        const unitValue = settings?.unit_value || 10
+        const units = Math.round((stake / unitValue) * 100) / 100
         await clearSession(supabase, chatId)
         await sendMsg(chatId,
-          summaryText(bookmaker, parseFloat(odds), stake),
-          confirmKb(bookmaker, odds, String(stake))
+          summaryText(bk, pick, parseFloat(odds), stake, units),
+          confirmKb(bk, odds, String(stake), pick)
+        )
+        return NextResponse.json({ ok: true })
+      }
+
+      // Match name after registration
+      if (session?.step === 'typing_match') {
+        const { betId } = session.data as { betId: string }
+        await supabase.from('bets').update({ match: rawText }).eq('id', betId)
+        await clearSession(supabase, chatId)
+        await sendMsg(chatId,
+          `✅ Partido guardado: <b>${rawText}</b>\n\nCuando sepas el resultado:\n<b>ganada</b> ✅  <b>perdida</b> ❌  <b>anulada</b> ↩️  <b>cashout 50</b> 💸`
         )
         return NextResponse.json({ ok: true })
       }
@@ -383,7 +462,7 @@ export async function POST(request: NextRequest) {
         const profitText = resultAmount !== null
           ? (resultAmount >= 0 ? `+€${resultAmount.toFixed(2)}` : `-€${Math.abs(resultAmount).toFixed(2)}`) : ''
         await sendMsg(chatId,
-          `${e[newStatus]} Última apuesta: <b>${newStatus}</b>${profitText ? ` | ${profitText}` : ''}`
+          `${e[newStatus]} <b>${pendingBet.match}</b> actualizada: <b>${newStatus}</b>${profitText ? ` | ${profitText}` : ''}`
         )
         return NextResponse.json({ ok: true })
       }
