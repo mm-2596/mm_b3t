@@ -49,7 +49,7 @@ export function Sidebar() {
   }
 
   return (
-    <aside className="fixed left-0 top-0 h-full w-60 border-r border-gray-700/50 bg-gray-900/50 backdrop-blur-xl flex flex-col">
+    <aside className="hidden md:flex fixed left-0 top-0 h-full w-60 border-r border-gray-700/50 bg-gray-900/50 backdrop-blur-xl flex-col">
       {/* Logo */}
       <div className="flex items-center gap-3 px-6 py-5 border-b border-gray-700/50">
         <div className="w-8 h-8 rounded-lg bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center">

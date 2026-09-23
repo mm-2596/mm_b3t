@@ -70,7 +70,7 @@ export default function DashboardPage() {
         </div>
         <Button onClick={() => setShowBetForm(true)} className="gap-2">
           <Plus className="w-4 h-4" />
-          Nueva Apuesta
+          <span className="hidden sm:inline">Nueva Apuesta</span>
         </Button>
       </div>
 
@@ -107,7 +107,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Secondary stats */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="rounded-xl border border-gray-700/50 bg-gray-800/50 p-4">
           <p className="text-xs text-gray-400 uppercase tracking-wider mb-3">Resumen</p>
           <div className="space-y-2">
@@ -201,8 +201,8 @@ export default function DashboardPage() {
                 <tr className="border-b border-gray-700/50">
                   <th className="text-left px-4 py-3 text-xs font-medium text-gray-400 uppercase tracking-wider">Fecha</th>
                   <th className="text-left px-4 py-3 text-xs font-medium text-gray-400 uppercase tracking-wider">Pick</th>
-                  <th className="text-left px-4 py-3 text-xs font-medium text-gray-400 uppercase tracking-wider">Cuota</th>
-                  <th className="text-left px-4 py-3 text-xs font-medium text-gray-400 uppercase tracking-wider">Unidades</th>
+                  <th className="hidden sm:table-cell text-left px-4 py-3 text-xs font-medium text-gray-400 uppercase tracking-wider">Cuota</th>
+                  <th className="hidden sm:table-cell text-left px-4 py-3 text-xs font-medium text-gray-400 uppercase tracking-wider">Unidades</th>
                   <th className="text-left px-4 py-3 text-xs font-medium text-gray-400 uppercase tracking-wider">Estado</th>
                   <th className="text-right px-4 py-3 text-xs font-medium text-gray-400 uppercase tracking-wider">P&L</th>
                 </tr>
@@ -219,8 +219,8 @@ export default function DashboardPage() {
                         <div className="text-sm text-gray-100 font-medium">{bet.pick}</div>
                         <div className="text-xs text-gray-500">{bet.match}</div>
                       </td>
-                      <td className="px-4 py-3 text-sm text-gray-300">{bet.odds.toFixed(2)}</td>
-                      <td className="px-4 py-3 text-sm text-gray-300">{bet.units}u</td>
+                      <td className="hidden sm:table-cell px-4 py-3 text-sm text-gray-300">{bet.odds.toFixed(2)}</td>
+                      <td className="hidden sm:table-cell px-4 py-3 text-sm text-gray-300">{bet.units}u</td>
                       <td className="px-4 py-3">
                         <span className={`inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium ${getStatusBg(bet.status)}`}>
                           {STATUS_LABELS[bet.status]}
