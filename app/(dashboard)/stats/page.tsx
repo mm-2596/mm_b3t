@@ -207,27 +207,31 @@ export default function StatsPage() {
   return (
     <div className="space-y-6">
       {/* Header + Period selector */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-100">Estadísticas</h1>
-          <p className="text-sm text-gray-400 mt-0.5">
-            {stats.settled.length} apuestas liquidadas · {stats.pending} pendientes
-          </p>
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-100">Estadísticas</h1>
+            <p className="text-sm text-gray-400 mt-0.5">
+              {stats.settled.length} liquidadas · {stats.pending} pendientes
+            </p>
+          </div>
         </div>
-        <div className="flex gap-1 bg-gray-800/50 rounded-lg p-1 border border-gray-700/50 flex-wrap">
-          {(Object.keys(PERIOD_LABELS) as Period[]).map(p => (
-            <button
-              key={p}
-              onClick={() => setPeriod(p)}
-              className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
-                period === p
-                  ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/20'
-                  : 'text-gray-400 hover:text-gray-200'
-              }`}
-            >
-              {PERIOD_LABELS[p]}
-            </button>
-          ))}
+        <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
+          <div className="flex gap-1 bg-gray-800/50 rounded-lg p-1 border border-gray-700/50 w-max sm:w-auto sm:flex-wrap">
+            {(Object.keys(PERIOD_LABELS) as Period[]).map(p => (
+              <button
+                key={p}
+                onClick={() => setPeriod(p)}
+                className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all whitespace-nowrap ${
+                  period === p
+                    ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/20'
+                    : 'text-gray-400 hover:text-gray-200'
+                }`}
+              >
+                {PERIOD_LABELS[p]}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -278,7 +282,7 @@ export default function StatsPage() {
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
         {/* Monthly P&L */}
         {stats.monthlyPnl.length > 0 && (
           <div className="rounded-xl border border-gray-700/50 bg-gray-800/50 p-6">
@@ -325,24 +329,27 @@ export default function StatsPage() {
           <table className="w-full">
             <thead>
               <tr className="border-b border-gray-700/30">
-                {['Deporte', 'Apuestas', 'W/L', '% Ac.', 'ROI', 'P&L'].map(h => (
-                  <th key={h} className={`px-6 py-3 text-xs font-medium text-gray-400 uppercase ${h === 'Deporte' ? 'text-left' : 'text-right'}`}>{h}</th>
-                ))}
+                <th className="text-left px-4 py-3 text-xs font-medium text-gray-400 uppercase">Deporte</th>
+                <th className="hidden sm:table-cell text-right px-4 py-3 text-xs font-medium text-gray-400 uppercase">Ap.</th>
+                <th className="hidden sm:table-cell text-right px-4 py-3 text-xs font-medium text-gray-400 uppercase">W/L</th>
+                <th className="text-right px-4 py-3 text-xs font-medium text-gray-400 uppercase">% Ac.</th>
+                <th className="hidden sm:table-cell text-right px-4 py-3 text-xs font-medium text-gray-400 uppercase">ROI</th>
+                <th className="text-right px-4 py-3 text-xs font-medium text-gray-400 uppercase">P&L</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-700/20">
               {stats.bySport.map(row => (
                 <tr key={row.sport} className="hover:bg-gray-700/20 transition-colors">
-                  <td className="px-6 py-3 text-sm font-medium text-gray-100">{row.sport}</td>
-                  <td className="px-6 py-3 text-sm text-gray-300 text-right">{row.bets}</td>
-                  <td className="px-6 py-3 text-sm text-gray-300 text-right">{row.wins}/{row.losses}</td>
-                  <td className="px-6 py-3 text-sm text-right">
+                  <td className="px-4 py-3 text-sm font-medium text-gray-100">{row.sport}</td>
+                  <td className="hidden sm:table-cell px-4 py-3 text-sm text-gray-300 text-right">{row.bets}</td>
+                  <td className="hidden sm:table-cell px-4 py-3 text-sm text-gray-300 text-right">{row.wins}/{row.losses}</td>
+                  <td className="px-4 py-3 text-sm text-right">
                     <span className={row.winRate >= 50 ? 'text-green-400' : 'text-red-400'}>{row.winRate.toFixed(1)}%</span>
                   </td>
-                  <td className="px-6 py-3 text-sm text-right">
+                  <td className="hidden sm:table-cell px-4 py-3 text-sm text-right">
                     <span className={row.roi >= 0 ? 'text-green-400' : 'text-red-400'}>{row.roi.toFixed(1)}%</span>
                   </td>
-                  <td className="px-6 py-3 text-sm font-semibold text-right">
+                  <td className="px-4 py-3 text-sm font-semibold text-right">
                     <span className={row.profit >= 0 ? 'text-green-400' : 'text-red-400'}>
                       {row.profit >= 0 ? '+' : ''}{formatCurrency(row.profit)}
                     </span>
@@ -363,21 +370,23 @@ export default function StatsPage() {
           <table className="w-full">
             <thead>
               <tr className="border-b border-gray-700/30">
-                {['Casa', 'Apuestas', 'Stake', 'ROI', 'P&L'].map(h => (
-                  <th key={h} className={`px-6 py-3 text-xs font-medium text-gray-400 uppercase ${h === 'Casa' ? 'text-left' : 'text-right'}`}>{h}</th>
-                ))}
+                <th className="text-left px-4 py-3 text-xs font-medium text-gray-400 uppercase">Casa</th>
+                <th className="hidden sm:table-cell text-right px-4 py-3 text-xs font-medium text-gray-400 uppercase">Ap.</th>
+                <th className="hidden sm:table-cell text-right px-4 py-3 text-xs font-medium text-gray-400 uppercase">Stake</th>
+                <th className="text-right px-4 py-3 text-xs font-medium text-gray-400 uppercase">ROI</th>
+                <th className="text-right px-4 py-3 text-xs font-medium text-gray-400 uppercase">P&L</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-700/20">
               {stats.byBookmaker.map(row => (
                 <tr key={row.bookie} className="hover:bg-gray-700/20 transition-colors">
-                  <td className="px-6 py-3 text-sm font-medium text-gray-100">{row.bookie}</td>
-                  <td className="px-6 py-3 text-sm text-gray-300 text-right">{row.bets}</td>
-                  <td className="px-6 py-3 text-sm text-gray-300 text-right">{formatCurrency(row.stake)}</td>
-                  <td className="px-6 py-3 text-sm text-right">
+                  <td className="px-4 py-3 text-sm font-medium text-gray-100">{row.bookie}</td>
+                  <td className="hidden sm:table-cell px-4 py-3 text-sm text-gray-300 text-right">{row.bets}</td>
+                  <td className="hidden sm:table-cell px-4 py-3 text-sm text-gray-300 text-right">{formatCurrency(row.stake)}</td>
+                  <td className="px-4 py-3 text-sm text-right">
                     <span className={row.roi >= 0 ? 'text-green-400' : 'text-red-400'}>{row.roi.toFixed(1)}%</span>
                   </td>
-                  <td className="px-6 py-3 text-sm font-semibold text-right">
+                  <td className="px-4 py-3 text-sm font-semibold text-right">
                     <span className={row.profit >= 0 ? 'text-green-400' : 'text-red-400'}>
                       {row.profit >= 0 ? '+' : ''}{formatCurrency(row.profit)}
                     </span>
