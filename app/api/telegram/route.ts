@@ -323,8 +323,8 @@ export async function POST(request: NextRequest) {
           sport: 'Fútbol', competition: '',
           match: 'Apuesta', pick: pickStr,
           bookmaker: bk, odds, units, stake,
-          bet_type: betType || 'pick',
-          status: 'pending', result_amount: null, notes: null,
+          status: 'pending', result_amount: null,
+          notes: betType === 'funbet' ? 'funbet' : null,
         }).select('id').single()
 
         if (error) {
