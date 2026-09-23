@@ -360,10 +360,16 @@ export async function POST(request: NextRequest) {
     if (textLower === '/start' || textLower === '/help') {
       await sendMsg(chatId,
         '🎯 <b>mm_b3t Bot</b>\n\n' +
-        '📸 Envía una <b>foto</b> de tu apuesta para registrarla.\n\n' +
+        '📸 Envía una <b>foto</b> o escribe <b>/nueva</b> para registrar una apuesta.\n\n' +
         'Resultado:\n• <b>ganada</b> ✅\n• <b>perdida</b> ❌\n• <b>anulada</b> ↩️\n• <b>cashout 50</b> 💸\n\n' +
-        'Comandos:\n• <b>/pendientes</b>\n• <b>/ultima</b>'
+        'Comandos:\n• <b>/nueva</b> — registrar apuesta\n• <b>/pendientes</b>\n• <b>/ultima</b>'
       )
+      return NextResponse.json({ ok: true })
+    }
+
+    if (textLower === '/nueva' || textLower === '/n') {
+      await clearSession(supabase, chatId)
+      await sendMsg(chatId, '📋 ¿En qué <b>casa de apuestas</b>?', bookmakersKb())
       return NextResponse.json({ ok: true })
     }
 
