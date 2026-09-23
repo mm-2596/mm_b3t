@@ -43,7 +43,10 @@ export async function GET(request: NextRequest) {
       .from('bets').select('*').eq('user_id', userId).eq('status', 'pending')
       .order('created_at', { ascending: false })
 
-    const messages: string[] = []
+    const parts: string[] = []
+
+    // ── Header ───────────────────────────────────────────────────────────
+    parts.push(`🎯 <b>Win &amp; Dine — Resumen nocturno</b>`)
 
     // ── Daily balance ────────────────────────────────────────────────────
     if (todayBets?.length) {
@@ -55,18 +58,18 @@ export async function GET(request: NextRequest) {
       const voids = todayBets.filter((b: any) => b.status === 'void')
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const co    = todayBets.filter((b: any) => b.status === 'cashout')
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const pend  = todayBets.filter((b: any) => b.status === 'pending')
-
       const settled = [...won, ...lost, ...voids, ...co]
       const pl = settled.reduce((sum: number, b: any) => sum + (b.result_amount ?? 0), 0)
       const plText = pl >= 0 ? `+€${pl.toFixed(2)}` : `-€${Math.abs(pl).toFixed(2)}`
 
-      messages.push(
-        `📊 <b>Balance de hoy</b>\n\n` +
-        `✅ Ganadas: <b>${won.length}</b>   ❌ Perdidas: <b>${lost.length}</b>   ↩️ Anuladas: <b>${voids.length}</b>${co.length ? `   💸 Cashout: ${co.length}` : ''}\n` +
-        `⏳ Pendientes hoy: <b>${pend.length}</b>\n` +
-        `💰 P&L del día: <b>${settled.length ? plText : '—'}</b>`
+      const bits = [`✅ ${won.length} ganadas`, `❌ ${lost.length} perdidas`]
+      if (co.length) bits.push(`💸 ${co.length} cashout`)
+      if (voids.length) bits.push(`↩️ ${voids.length} anuladas`)
+
+      parts.push(
+        `📊 <b>Apuestas de hoy:</b>\n` +
+        bits.join(' · ') + `\n` +
+        `P&L del día: <b>${settled.length ? plText : '—'}</b>`
       )
     }
 
@@ -74,20 +77,21 @@ export async function GET(request: NextRequest) {
     if (pendingBets?.length) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const list = pendingBets.map((b: any, i: number) => {
-        const name = b.match !== 'Apuesta' ? b.match : `${b.pick} @ ${b.odds}`
-        const age = b.date !== today ? ` <i>(${b.date})</i>` : ''
-        return `${i + 1}. <b>${name}</b>${age} — ${b.bookmaker} | €${b.stake}`
+        const name = b.pick !== 'Múltiples' ? b.pick : (b.competition || b.match)
+        const dateTag = b.date !== today ? ` <i>(${b.date})</i>` : ' <i>(hoy)</i>'
+        return `${i + 1}. ${name} @ ${b.odds}${dateTag} — ${b.bookmaker}`
       }).join('\n')
 
-      messages.push(
-        `⏳ <b>${pendingBets.length} apuesta${pendingBets.length > 1 ? 's' : ''} pendiente${pendingBets.length > 1 ? 's' : ''}</b>:\n\n${list}\n\n` +
-        `Escribe <b>ganada</b>, <b>perdida</b>, <b>anulada</b> o <b>cashout 50</b>`
+      parts.push(
+        `⚠️ <b>${pendingBets.length} apuesta${pendingBets.length > 1 ? 's' : ''} sin verificar:</b>\n\n` +
+        list + `\n\nLiquídalas antes de dormir 👆\n` +
+        `Escribe <b>ganada</b> · <b>perdida</b> · <b>anulada</b> · <b>cashout 50</b>`
       )
-    } else if (!todayBets?.length) {
-      messages.push(`✅ <b>Sin pendientes</b> — todo al día 👌`)
+    } else {
+      parts.push(`Sin apuestas pendientes.\nTodo registrado y al día ✅\n\nBuenas noches 🌙`)
     }
 
-    await sendMsg(chatId, messages.join('\n\n──────────────\n\n'))
+    await sendMsg(chatId, parts.join('\n\n'))
   }
 
   return NextResponse.json({ ok: true, notified: Object.keys(CHAT_ID_MAP).length })
