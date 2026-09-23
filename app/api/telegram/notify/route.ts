@@ -83,11 +83,11 @@ export async function GET(request: NextRequest) {
         `⏳ <b>${pendingBets.length} apuesta${pendingBets.length > 1 ? 's' : ''} pendiente${pendingBets.length > 1 ? 's' : ''}</b>:\n\n${list}\n\n` +
         `Escribe <b>ganada</b>, <b>perdida</b>, <b>anulada</b> o <b>cashout 50</b>`
       )
+    } else if (!todayBets?.length) {
+      messages.push(`✅ <b>Sin pendientes</b> — todo al día 👌`)
     }
 
-    if (messages.length) {
-      await sendMsg(chatId, messages.join('\n\n──────────────\n\n'))
-    }
+    await sendMsg(chatId, messages.join('\n\n──────────────\n\n'))
   }
 
   return NextResponse.json({ ok: true, notified: Object.keys(CHAT_ID_MAP).length })
