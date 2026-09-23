@@ -67,6 +67,7 @@ function oddsKb(bookmaker: string) {
       callback_data: `od:${o}|${bookmaker}`,
     })))
   }
+  rows.push([{ text: '✏️ Otra cuota', callback_data: `od_c:${bookmaker}` }])
   return { inline_keyboard: rows }
 }
 
@@ -78,6 +79,7 @@ function stakeKb(bookmaker: string, odds: string) {
       callback_data: `st:${s}|${bookmaker}|${odds}`,
     })))
   }
+  rows.push([{ text: '✏️ Otro importe', callback_data: `st_c:${bookmaker}|${odds}` }])
   return { inline_keyboard: rows }
 }
 
