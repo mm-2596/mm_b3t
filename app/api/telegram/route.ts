@@ -6,7 +6,6 @@ export const maxDuration = 60
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || ''
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
 const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || ''
-const APIFOOTBALL_KEY = process.env.APIFOOTBALL_KEY || ''
 
 const CHAT_ID_MAP: Record<string, string> = (() => {
   try { return JSON.parse(process.env.TELEGRAM_CHAT_ID_MAP || '{}') }
@@ -43,22 +42,17 @@ async function answerCQ(id: string) {
   })
 }
 
-// ── Football API ──────────────────────────────────────────────────────────────
+// ── Football API (ESPN — free, no key) ───────────────────────────────────────
 interface Fixture { home: string; away: string; time: string }
 
-const LEAGUE_MAP: Record<string, number> = {
-  'Liga EA Sports':   140,
-  'Premier League':   39,
-  'Serie A':          135,
-  'Bundesliga':       78,
-  'Champions League': 2,
-  'Copa del Rey':     556,
-  'Nations League':   5,
-}
-
-function getCurrentSeason(): number {
-  const now = new Date()
-  return (now.getMonth() + 1) >= 7 ? now.getFullYear() : now.getFullYear() - 1
+const LEAGUE_MAP: Record<string, string> = {
+  'Liga EA Sports':   'esp.1',
+  'Premier League':   'eng.1',
+  'Serie A':          'ita.1',
+  'Bundesliga':       'ger.1',
+  'Champions League': 'uefa.champions',
+  'Copa del Rey':     'esp.copa_del_rey',
+  'Nations League':   'uefa.nations',
 }
 
 function toMadridTime(utcDateStr: string): string {
@@ -68,22 +62,24 @@ function toMadridTime(utcDateStr: string): string {
 }
 
 async function fetchTodayFixtures(comp: string): Promise<Fixture[]> {
-  if (!APIFOOTBALL_KEY || !LEAGUE_MAP[comp]) return []
+  const slug = LEAGUE_MAP[comp]
+  if (!slug) return []
   try {
-    const today = new Date().toISOString().split('T')[0]
-    const season = getCurrentSeason()
+    const dateStr = new Date().toISOString().split('T')[0].replace(/-/g, '')
     const res = await fetch(
-      `https://v3.football.api-sports.io/fixtures?date=${today}&league=${LEAGUE_MAP[comp]}&season=${season}`,
-      { headers: { 'x-apisports-key': APIFOOTBALL_KEY } }
+      `https://site.api.espn.com/apis/site/v2/sports/soccer/${slug}/scoreboard?dates=${dateStr}`,
+      { cache: 'no-store' }
     )
     const data = await res.json()
-    if (!Array.isArray(data.response)) return []
+    if (!Array.isArray(data.events)) return []
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return (data.response as any[]).slice(0, 8).map(f => ({
-      home: f.teams.home.name,
-      away: f.teams.away.name,
-      time: toMadridTime(f.fixture.date),
-    }))
+    return (data.events as any[]).slice(0, 8).map(e => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const competitors: any[] = e.competitions?.[0]?.competitors || []
+      const home = competitors.find((c: any) => c.homeAway === 'home')?.team?.displayName || ''
+      const away = competitors.find((c: any) => c.homeAway === 'away')?.team?.displayName || ''
+      return { home, away, time: toMadridTime(e.date) }
+    }).filter((f: Fixture) => f.home && f.away)
   } catch { return [] }
 }
 
@@ -351,7 +347,7 @@ export async function POST(request: NextRequest) {
             await setSession(supabase, chatId, 'type', { ...session.data, comp, match: '' })
             await editMsg(chatId, messageId,
               `🏦 <b>${session.data.bk}</b> · 🏆 <b>${comp}</b>\n` +
-              (APIFOOTBALL_KEY ? `⚠️ Sin partidos hoy en esta liga.\n` : '') +
+              `⚠️ Sin partidos hoy en esta liga.\n` +
               `\n¿Qué tipo de apuesta?`,
               typeKb()
             )
