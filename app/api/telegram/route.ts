@@ -72,12 +72,13 @@ async function fetchTodayFixtures(comp: string): Promise<Fixture[]> {
     )
     const data = await res.json()
     if (!Array.isArray(data.events)) return []
+    const shorten = (name: string) => name.length > 18 ? name.slice(0, 17) + '…' : name
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return (data.events as any[]).slice(0, 8).map(e => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const competitors: any[] = e.competitions?.[0]?.competitors || []
-      const home = competitors.find((c: any) => c.homeAway === 'home')?.team?.displayName || ''
-      const away = competitors.find((c: any) => c.homeAway === 'away')?.team?.displayName || ''
+      const home = shorten(competitors.find((c: any) => c.homeAway === 'home')?.team?.shortDisplayName || competitors.find((c: any) => c.homeAway === 'home')?.team?.displayName || '')
+      const away = shorten(competitors.find((c: any) => c.homeAway === 'away')?.team?.shortDisplayName || competitors.find((c: any) => c.homeAway === 'away')?.team?.displayName || '')
       return { home, away, time: toMadridTime(e.date) }
     }).filter((f: Fixture) => f.home && f.away)
   } catch { return [] }
