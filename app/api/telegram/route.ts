@@ -99,6 +99,7 @@ interface SessionData {
   fixtures?: Fixture[]
   mixFixtures?: Array<{ match: string }>
   mixBrowseFixtures?: Fixture[]
+  pickCategory?: string
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -129,7 +130,12 @@ const COMPETITIONS_LIST = [
   'Champions League', 'Copa del Rey',
   'Nations League', 'MIX',
 ]
-const QUICK_PICKS = ['1', 'X', '2', '1X', 'X2', 'Over 2.5', 'Under 2.5', 'BTTS Sí', 'BTTS No', 'Handicap']
+const PICK_CATEGORIES: Record<string, string[]> = {
+  resultado: ['1', 'X', '2', '1X', 'X2', '12'],
+  goles:     ['Over 0.5', 'Under 0.5', 'Over 1.5', 'Under 1.5', 'Over 2.5', 'Under 2.5', 'Over 3.5', 'Under 3.5', 'BTTS Sí', 'BTTS No'],
+  corners:   ['+7.5c', '+8.5c', '+9.5c', '+10.5c', '+11.5c', '-7.5c', '-8.5c', '-9.5c', '-10.5c'],
+  tarjetas:  ['Tarj +2.5', 'Tarj +3.5', 'Tarj +4.5', 'Tarj +5.5'],
+}
 const COMMON_ODDS = ['1.30', '1.50', '1.70', '1.85', '2.00', '2.25', '2.50', '3.00', '4.00']
 const COMMON_STAKES = ['5', '10', '15', '20', '30', '40', '50', '75', '100']
 
@@ -220,17 +226,45 @@ function typeKb() {
   }
 }
 
-function pickGridKb(selectedPicks: string[]) {
-  const rows = []
-  for (let i = 0; i < QUICK_PICKS.length; i += 5) {
-    rows.push(QUICK_PICKS.slice(i, i + 5).map(p => ({
-      text: selectedPicks.includes(p) ? `✅ ${p}` : p,
-      callback_data: `pk:${p}`,
-    })))
-  }
-  rows.push([{ text: '✏️ Otro pick', callback_data: 'pk_custom' }])
+function categoryKb(selectedPicks: string[]) {
+  const rows: { text: string; callback_data: string }[][] = [
+    [
+      { text: '⚽ Resultado', callback_data: 'cat:resultado' },
+      { text: '🥅 Goles', callback_data: 'cat:goles' },
+    ],
+    [
+      { text: '📐 Corners', callback_data: 'cat:corners' },
+      { text: '🟨 Tarjetas', callback_data: 'cat:tarjetas' },
+    ],
+    [{ text: '✏️ Otro pick', callback_data: 'pk_custom' }],
+  ]
   if (selectedPicks.length > 0) {
-    rows.push([{ text: `✅ Listo (${selectedPicks.join(' + ')})`, callback_data: 'pk_done' }])
+    rows.push([{ text: `✅ Listo — ${selectedPicks.join(' + ')}`, callback_data: 'pk_done' }])
+  }
+  return { inline_keyboard: rows }
+}
+
+function categoryPicksKb(category: string, selectedPicks: string[]) {
+  const picks = PICK_CATEGORIES[category] || []
+  const btn = (p: string) => ({
+    text: selectedPicks.includes(p) ? `✅ ${p}` : p,
+    callback_data: `pk:${p}`,
+  })
+  let rows: { text: string; callback_data: string }[][] = []
+  if (category === 'resultado') {
+    rows = [picks.slice(0, 3).map(btn), picks.slice(3).map(btn)]
+  } else if (category === 'goles') {
+    rows = [[btn(picks[0]), btn(picks[1])], [btn(picks[2]), btn(picks[3])],
+            [btn(picks[4]), btn(picks[5])], [btn(picks[6]), btn(picks[7])],
+            [btn(picks[8]), btn(picks[9])]]
+  } else if (category === 'corners') {
+    rows = [picks.slice(0, 3).map(btn), picks.slice(3, 5).map(btn), picks.slice(5, 7).map(btn), picks.slice(7).map(btn)]
+  } else {
+    rows = [picks.slice(0, 2).map(btn), picks.slice(2).map(btn)]
+  }
+  rows.push([{ text: '⬅️ Categorías', callback_data: 'pk_back' }])
+  if (selectedPicks.length > 0) {
+    rows.push([{ text: `✅ Listo — ${selectedPicks.join(' + ')}`, callback_data: 'pk_done' }])
   }
   return { inline_keyboard: rows }
 }
@@ -473,16 +507,31 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ ok: true })
       }
 
-      // ── Type selected ───────────────────────────────────────────────────
+      // ── Type selected → show pick categories ───────────────────────────
       if (cbData.startsWith('tp:')) {
         const betType = cbData.slice(3)
         const session = await getSession(supabase, chatId)
         if (!session?.data.bk) return NextResponse.json({ ok: true })
-        await setSession(supabase, chatId, 'picks', { ...session.data, betType, picks: [] })
+        await setSession(supabase, chatId, 'picks', { ...session.data, betType, picks: [], pickCategory: undefined })
         const matchLine = session.data.match ? `⚽ <b>${session.data.match}</b>\n` : ''
         await editMsg(chatId, messageId,
-          `🏦 <b>${session.data.bk}</b> | ${betType === 'funbet' ? '🎉 Funbet' : '🎯 Pick'}\n${matchLine}\n📌 ¿Cuál es tu pick? (puedes elegir varios para combinadas)`,
-          pickGridKb([])
+          `🏦 <b>${session.data.bk}</b> | ${betType === 'funbet' ? '🎉 Funbet' : '🎯 Pick'}\n${matchLine}\n📌 ¿Qué tipo de pick?`,
+          categoryKb([])
+        )
+        return NextResponse.json({ ok: true })
+      }
+
+      // ── Category selected → show picks for that category ───────────────
+      if (cbData.startsWith('cat:')) {
+        const cat = cbData.slice(4)
+        const session = await getSession(supabase, chatId)
+        if (!session?.data.bk) return NextResponse.json({ ok: true })
+        const picks = session.data.picks || []
+        await setSession(supabase, chatId, 'picks', { ...session.data, pickCategory: cat })
+        const labels: Record<string, string> = { resultado: '⚽ Resultado', goles: '🥅 Goles', corners: '📐 Corners', tarjetas: '🟨 Tarjetas' }
+        await editMsg(chatId, messageId,
+          `${labels[cat]} — elige tu pick:` + (picks.length ? `\n\nYa seleccionado: <b>${picks.join(' + ')}</b>` : ''),
+          categoryPicksKb(cat, picks)
         )
         return NextResponse.json({ ok: true })
       }
@@ -496,12 +545,36 @@ export async function POST(request: NextRequest) {
         const newPicks = picks.includes(pick)
           ? picks.filter((p: string) => p !== pick)
           : [...picks, pick]
+        const cat = session.data.pickCategory
         await setSession(supabase, chatId, 'picks', { ...session.data, picks: newPicks })
+        if (cat) {
+          const labels: Record<string, string> = { resultado: '⚽ Resultado', goles: '🥅 Goles', corners: '📐 Corners', tarjetas: '🟨 Tarjetas' }
+          await editMsg(chatId, messageId,
+            `${labels[cat]} — elige tu pick:` + (newPicks.length ? `\n\nSeleccionado: <b>${newPicks.join(' + ')}</b>` : ''),
+            categoryPicksKb(cat, newPicks)
+          )
+        } else {
+          const matchLine = session.data.match ? `⚽ <b>${session.data.match}</b>\n` : ''
+          await editMsg(chatId, messageId,
+            `🏦 <b>${session.data.bk}</b>\n${matchLine}\n📌 ¿Qué tipo de pick?` +
+            (newPicks.length ? `\n\nSeleccionado: <b>${newPicks.join(' + ')}</b>` : ''),
+            categoryKb(newPicks)
+          )
+        }
+        return NextResponse.json({ ok: true })
+      }
+
+      // ── Back to categories ──────────────────────────────────────────────
+      if (cbData === 'pk_back') {
+        const session = await getSession(supabase, chatId)
+        if (!session?.data.bk) return NextResponse.json({ ok: true })
+        const picks = session.data.picks || []
+        await setSession(supabase, chatId, 'picks', { ...session.data, pickCategory: undefined })
         const matchLine = session.data.match ? `⚽ <b>${session.data.match}</b>\n` : ''
         await editMsg(chatId, messageId,
-          `🏦 <b>${session.data.bk}</b>\n${matchLine}\n📌 ¿Cuál es tu <b>pick</b>?\n` +
-          (newPicks.length > 0 ? `\nSeleccionado: <b>${newPicks.join(' + ')}</b>` : ''),
-          pickGridKb(newPicks)
+          `🏦 <b>${session.data.bk}</b>\n${matchLine}\n📌 ¿Qué tipo de pick?` +
+          (picks.length ? `\n\nSeleccionado: <b>${picks.join(' + ')}</b>` : ''),
+          categoryKb(picks)
         )
         return NextResponse.json({ ok: true })
       }
@@ -512,7 +585,7 @@ export async function POST(request: NextRequest) {
         if (!session?.data.bk) return NextResponse.json({ ok: true })
         await setSession(supabase, chatId, 'typing_pick', session.data)
         await editMsg(chatId, messageId,
-          `✏️ Escribe el pick (ej: <code>Córners Más 3.5 + BTTS</code>):`
+          `✏️ Escribe el pick (ej: <code>Mbappé tiro a puerta</code>):`
         )
         return NextResponse.json({ ok: true })
       }
@@ -822,13 +895,14 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ ok: true })
       }
 
-      // Custom pick text
+      // Custom pick text → back to category selector
       if (session?.step === 'typing_pick') {
         const picks = [...(session.data.picks || []), rawText]
-        await setSession(supabase, chatId, 'odds', { ...session.data, picks })
+        await setSession(supabase, chatId, 'picks', { ...session.data, picks, pickCategory: undefined })
+        const matchLine = session.data.match ? `⚽ <b>${session.data.match}</b>\n` : ''
         await sendMsg(chatId,
-          `📌 <b>${picks.join(' + ')}</b>\n\n📊 ¿Cuál es la <b>cuota</b>?`,
-          oddsKb()
+          `🏦 <b>${session.data.bk}</b>\n${matchLine}\n📌 ¿Qué tipo de pick?\n\nSeleccionado: <b>${picks.join(' + ')}</b>`,
+          categoryKb(picks)
         )
         return NextResponse.json({ ok: true })
       }
