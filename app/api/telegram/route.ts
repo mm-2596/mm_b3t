@@ -127,6 +127,7 @@ interface SessionData {
   lineup?: LineupTeam[]
   lineupTeamIdx?: number
   lineupPlayer?: string
+  editBetId?: string
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -175,6 +176,10 @@ function mainMenuKb() {
       ],
       [
         { text: '📊 Resumen hoy', callback_data: 'menu:resumen' },
+        { text: '📅 Historial', callback_data: 'menu:historial' },
+      ],
+      [
+        { text: '🛠️ Gestionar', callback_data: 'menu:gestionar' },
         { text: '🔔 Últimas 5', callback_data: 'menu:ultimas' },
       ],
     ],
@@ -355,6 +360,73 @@ function stakeKb() {
   return { inline_keyboard: rows }
 }
 
+function historialKb() {
+  return {
+    inline_keyboard: [
+      [
+        { text: 'Hoy', callback_data: 'hist:today' },
+        { text: 'Ayer', callback_data: 'hist:yesterday' },
+      ],
+      [
+        { text: 'Esta semana', callback_data: 'hist:week' },
+        { text: 'Este mes', callback_data: 'hist:month' },
+      ],
+      [{ text: '⬅️ Volver', callback_data: 'hist:back' }],
+    ],
+  }
+}
+
+function gestionarKb() {
+  return {
+    inline_keyboard: [
+      [
+        { text: '🗑️ Eliminar apuesta', callback_data: 'del_list' },
+        { text: '✏️ Editar apuesta', callback_data: 'edt_list' },
+      ],
+      [{ text: '❌ Cancelar', callback_data: 'cancel' }],
+    ],
+  }
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function deleteBetsKb(bets: any[]) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const rows = bets.map((b: any) => {
+    const label = b.match !== 'Apuesta' ? b.match : `${b.pick} @ ${b.odds}`
+    const short = label.length > 30 ? label.slice(0, 29) + '…' : label
+    return [{ text: `🗑️ ${short}`, callback_data: `del:${b.id}` }]
+  })
+  rows.push([{ text: '❌ Cancelar', callback_data: 'cancel' }])
+  return { inline_keyboard: rows }
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function editBetsKb(bets: any[]) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const rows = bets.map((b: any) => {
+    const label = b.match !== 'Apuesta' ? b.match : `${b.pick} @ ${b.odds}`
+    const short = label.length > 30 ? label.slice(0, 29) + '…' : label
+    return [{ text: `✏️ ${short}`, callback_data: `edt:${b.id}` }]
+  })
+  rows.push([{ text: '❌ Cancelar', callback_data: 'cancel' }])
+  return { inline_keyboard: rows }
+}
+
+function editFieldKb(betId: string) {
+  return {
+    inline_keyboard: [
+      [
+        { text: '📌 Pick', callback_data: `edt_pick:${betId}` },
+        { text: '📊 Cuota', callback_data: `edt_odds:${betId}` },
+      ],
+      [
+        { text: '💵 Importe', callback_data: `edt_stake:${betId}` },
+      ],
+      [{ text: '❌ Cancelar', callback_data: 'cancel' }],
+    ],
+  }
+}
+
 function summaryText(bk: string, comp: string, match: string, betType: string, picks: string[], odds: number, stake: number, units: number) {
   const profit = stake * (odds - 1)
   const total = stake + profit
@@ -369,6 +441,68 @@ function summaryText(bk: string, comp: string, match: string, betType: string, p
     `💵 Apostado: <b>€${stake.toFixed(2)}</b> (${units}u)\n` +
     `💰 Ganancias: <b>+€${profit.toFixed(2)}</b>\n` +
     `🏆 Total a cobrar: <b>€${total.toFixed(2)}</b>`
+  )
+}
+
+function getDateRange(period: string): { gte: string; lte: string } {
+  const now = new Date()
+  const today = now.toISOString().split('T')[0]
+  if (period === 'today') return { gte: today, lte: today }
+  if (period === 'yesterday') {
+    const y = new Date(now); y.setDate(y.getDate() - 1)
+    const d = y.toISOString().split('T')[0]
+    return { gte: d, lte: d }
+  }
+  if (period === 'week') {
+    const w = new Date(now); w.setDate(w.getDate() - 6)
+    return { gte: w.toISOString().split('T')[0], lte: today }
+  }
+  if (period === 'month') {
+    return { gte: `${today.slice(0, 7)}-01`, lte: today }
+  }
+  return { gte: today, lte: today }
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function historialText(bets: any[], period: string) {
+  const labels: Record<string, string> = { today: 'HOY', yesterday: 'AYER', week: 'ESTA SEMANA', month: 'ESTE MES' }
+  const e: Record<string, string> = { pending: '⏳', won: '✅', lost: '❌', void: '↩️', cashout: '💸' }
+  if (!bets.length) return `📅 <b>${labels[period]}</b>\n\nSin apuestas registradas.`
+  const lines = bets.map((b: any) => {
+    const name = b.match !== 'Apuesta' ? b.match : b.pick
+    const short = name.length > 28 ? name.slice(0, 27) + '…' : name
+    const pl = b.result_amount != null
+      ? (b.result_amount >= 0 ? ` <b>+€${b.result_amount.toFixed(2)}</b>` : ` <b>-€${Math.abs(b.result_amount).toFixed(2)}</b>`) : ''
+    return `${e[b.status] || '?'} ${short} @ ${b.odds}${pl}`
+  }).join('\n')
+  const settled = bets.filter((b: any) => b.status !== 'pending')
+  const pl = settled.reduce((s: number, b: any) => s + (b.result_amount ?? 0), 0)
+  const plText = settled.length ? (pl >= 0 ? `+€${pl.toFixed(2)}` : `-€${Math.abs(pl).toFixed(2)}`) : '—'
+  return `📅 <b>${labels[period]}</b> — ${bets.length} apuesta${bets.length > 1 ? 's' : ''}\n\n${lines}\n\n💰 P&L: <b>${plText}</b>`
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function statsText(bets: any[], bookmaker?: string) {
+  const header = bookmaker ? `📊 <b>Stats — ${bookmaker}</b>` : `📊 <b>Stats generales</b>`
+  if (!bets.length) return `${header}\n\nSin apuestas registradas.`
+  const won    = bets.filter((b: any) => b.status === 'won')
+  const lost   = bets.filter((b: any) => b.status === 'lost')
+  const pend   = bets.filter((b: any) => b.status === 'pending')
+  const co     = bets.filter((b: any) => b.status === 'cashout')
+  const voids  = bets.filter((b: any) => b.status === 'void')
+  const settled = [...won, ...lost, ...co, ...voids]
+  const totalStaked = settled.reduce((s: number, b: any) => s + (b.stake ?? 0), 0)
+  const pl = settled.reduce((s: number, b: any) => s + (b.result_amount ?? 0), 0)
+  const roi = totalStaked > 0 ? (pl / totalStaked * 100).toFixed(1) : '—'
+  const plText = pl >= 0 ? `+€${pl.toFixed(2)}` : `-€${Math.abs(pl).toFixed(2)}`
+  const winRate = settled.length > 0 ? ((won.length / settled.filter((b: any) => b.status !== 'void').length) * 100).toFixed(0) : '—'
+  return (
+    `${header}\n\n` +
+    `📈 Total: <b>${bets.length}</b>  |  Win rate: <b>${winRate}%</b>\n` +
+    `✅ Ganadas: <b>${won.length}</b>  ❌ Perdidas: <b>${lost.length}</b>\n` +
+    `💸 Cashout: <b>${co.length}</b>  ↩️ Anuladas: <b>${voids.length}</b>  ⏳ Pendientes: <b>${pend.length}</b>\n\n` +
+    `💵 Apostado: <b>€${totalStaked.toFixed(2)}</b>\n` +
+    `💰 P&L: <b>${plText}</b>  |  ROI: <b>${roi}%</b>`
   )
 }
 
@@ -843,6 +977,8 @@ export async function POST(request: NextRequest) {
           bookmaker: bk, odds, units, stake,
           status: 'pending', result_amount: null,
           notes: betType === 'funbet' ? 'funbet' : null,
+          event_id: session.data.matchId || null,
+          league_slug: session.data.leagueSlug || null,
         })
 
         if (error) {
@@ -880,10 +1016,121 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ ok: true })
       }
 
+      // ── Historial ───────────────────────────────────────────────────────
+      if (cbData === 'hist:back') {
+        await editMsg(chatId, messageId, '🎯 ¿Qué quieres hacer?', mainMenuKb())
+        return NextResponse.json({ ok: true })
+      }
+
+      if (cbData.startsWith('hist:')) {
+        const period = cbData.slice(5)
+        const { gte, lte } = getDateRange(period)
+        const { data: bets } = await supabase
+          .from('bets').select('*').eq('user_id', userId)
+          .gte('date', gte).lte('date', lte)
+          .order('date', { ascending: false })
+          .order('created_at', { ascending: false })
+          .limit(20)
+        await editMsg(chatId, messageId, historialText(bets || [], period), historialKb())
+        return NextResponse.json({ ok: true })
+      }
+
+      // ── Gestionar ───────────────────────────────────────────────────────
+      if (cbData === 'del_list') {
+        const { data: bets } = await supabase
+          .from('bets').select('*').eq('user_id', userId)
+          .order('created_at', { ascending: false }).limit(8)
+        if (!bets?.length) {
+          await editMsg(chatId, messageId, '📭 No hay apuestas para eliminar.', mainMenuKb())
+        } else {
+          await editMsg(chatId, messageId, '🗑️ <b>¿Qué apuesta eliminas?</b>', deleteBetsKb(bets))
+        }
+        return NextResponse.json({ ok: true })
+      }
+
+      if (cbData.startsWith('del:')) {
+        const betId = cbData.slice(4)
+        const { data: bet } = await supabase.from('bets').select('*').eq('id', betId).single()
+        if (!bet) return NextResponse.json({ ok: true })
+        const name = bet.match !== 'Apuesta' ? bet.match : `${bet.pick} @ ${bet.odds}`
+        await editMsg(chatId, messageId,
+          `🗑️ ¿Eliminar esta apuesta?\n\n<b>${name}</b>\n${bet.bookmaker} | €${bet.stake} | ${bet.status}`,
+          {
+            inline_keyboard: [[
+              { text: '✅ Sí, eliminar', callback_data: `del_ok:${betId}` },
+              { text: '❌ No', callback_data: 'del_list' },
+            ]],
+          }
+        )
+        return NextResponse.json({ ok: true })
+      }
+
+      if (cbData.startsWith('del_ok:')) {
+        const betId = cbData.slice(7)
+        await supabase.from('bets').delete().eq('id', betId)
+        await editMsg(chatId, messageId, '🗑️ Apuesta eliminada.', mainMenuKb())
+        return NextResponse.json({ ok: true })
+      }
+
+      if (cbData === 'edt_list') {
+        const { data: bets } = await supabase
+          .from('bets').select('*').eq('user_id', userId).eq('status', 'pending')
+          .order('created_at', { ascending: false }).limit(8)
+        if (!bets?.length) {
+          await editMsg(chatId, messageId, '📭 No hay apuestas pendientes para editar.', mainMenuKb())
+        } else {
+          await editMsg(chatId, messageId, '✏️ <b>¿Qué apuesta editas?</b>', editBetsKb(bets))
+        }
+        return NextResponse.json({ ok: true })
+      }
+
+      if (cbData.startsWith('edt:')) {
+        const betId = cbData.slice(4)
+        const { data: bet } = await supabase.from('bets').select('*').eq('id', betId).single()
+        if (!bet) return NextResponse.json({ ok: true })
+        const name = bet.match !== 'Apuesta' ? bet.match : `${bet.pick}`
+        await editMsg(chatId, messageId,
+          `✏️ <b>${name}</b>\n📌 ${bet.pick} @ ${bet.odds} | €${bet.stake}\n\n¿Qué quieres cambiar?`,
+          editFieldKb(betId)
+        )
+        return NextResponse.json({ ok: true })
+      }
+
+      if (cbData.startsWith('edt_odds:')) {
+        const betId = cbData.slice(9)
+        await setSession(supabase, chatId, 'typing_edit_odds', { editBetId: betId })
+        await editMsg(chatId, messageId, `📊 Escribe la nueva cuota (ej: <code>2.10</code>):`)
+        return NextResponse.json({ ok: true })
+      }
+
+      if (cbData.startsWith('edt_pick:')) {
+        const betId = cbData.slice(9)
+        await setSession(supabase, chatId, 'typing_edit_pick', { editBetId: betId })
+        await editMsg(chatId, messageId, `📌 Escribe el nuevo pick (ej: <code>Over 2.5</code>):`)
+        return NextResponse.json({ ok: true })
+      }
+
+      if (cbData.startsWith('edt_stake:')) {
+        const betId = cbData.slice(10)
+        await setSession(supabase, chatId, 'typing_edit_stake', { editBetId: betId })
+        await editMsg(chatId, messageId, `💵 Escribe el nuevo importe en euros (ej: <code>25</code>):`)
+        return NextResponse.json({ ok: true })
+      }
+
       // ── Main menu actions ───────────────────────────────────────────────
       if (cbData === 'menu:nueva') {
         await clearSession(supabase, chatId)
         await editMsg(chatId, messageId, '📸 ¿En qué <b>casa de apuestas</b>?', bookmakersKb())
+        return NextResponse.json({ ok: true })
+      }
+
+      if (cbData === 'menu:historial') {
+        await editMsg(chatId, messageId, '📅 ¿Qué período quieres ver?', historialKb())
+        return NextResponse.json({ ok: true })
+      }
+
+      if (cbData === 'menu:gestionar') {
+        await editMsg(chatId, messageId, '🛠️ <b>Gestionar apuestas</b>\n\n¿Qué quieres hacer?', gestionarKb())
         return NextResponse.json({ ok: true })
       }
 
@@ -974,9 +1221,16 @@ export async function POST(request: NextRequest) {
     if (textLower.startsWith('/start') || textLower.startsWith('/help')) {
       await sendMsg(chatId,
         '🎯 <b>Win &amp; Dine Bot</b>\n\n' +
-        'Usa el menú para registrar apuestas o liquídalas con:\n\n' +
-        '• <b>ganada</b> ✅\n• <b>perdida</b> ❌\n• <b>anulada</b> ↩️\n• <b>cashout 50</b> 💸\n\n' +
-        'Comandos:\n• <b>/nueva</b> — registrar apuesta\n• <b>/pendientes</b>\n• <b>/ultima</b>',
+        'Liquida tus apuestas con:\n' +
+        '• <b>ganada</b> ✅  • <b>perdida</b> ❌\n• <b>anulada</b> ↩️  • <b>cashout 50</b> 💸\n\n' +
+        'Comandos:\n' +
+        '• <b>/nueva</b> — registrar apuesta\n' +
+        '• <b>/pendientes</b> — apuestas activas\n' +
+        '• <b>/historial</b> — ver por fecha\n' +
+        '• <b>/stats</b> — estadísticas generales\n' +
+        '• <b>/stats Bet365</b> — stats por casa\n' +
+        '• <b>/editar</b> — modificar una apuesta\n' +
+        '• <b>/ultima</b> — última apuesta',
         mainMenuKb()
       )
       return NextResponse.json({ ok: true })
@@ -1000,6 +1254,33 @@ export async function POST(request: NextRequest) {
           `${i + 1}. <b>${b.match}</b> — ${b.pick} @ ${b.odds} | €${b.stake} (${b.units}u) — ${b.bookmaker}`
         ).join('\n\n')
         await sendMsg(chatId, `📋 <b>Pendientes:</b>\n\n${list}`)
+      }
+      return NextResponse.json({ ok: true })
+    }
+
+    if (textLower.startsWith('/historial') || textLower === '/h') {
+      await sendMsg(chatId, '📅 ¿Qué período quieres ver?', historialKb())
+      return NextResponse.json({ ok: true })
+    }
+
+    if (textLower.startsWith('/stats')) {
+      const parts = rawText.trim().split(/\s+/)
+      const bookmaker = parts.length > 1 ? parts.slice(1).join(' ') : null
+      let query = supabase.from('bets').select('*').eq('user_id', userId)
+      if (bookmaker) query = query.ilike('bookmaker', `%${bookmaker}%`)
+      const { data: bets } = await query.order('created_at', { ascending: false })
+      await sendMsg(chatId, statsText(bets || [], bookmaker || undefined), mainMenuKb())
+      return NextResponse.json({ ok: true })
+    }
+
+    if (textLower.startsWith('/editar') || textLower === '/e') {
+      const { data: bets } = await supabase
+        .from('bets').select('*').eq('user_id', userId).eq('status', 'pending')
+        .order('created_at', { ascending: false }).limit(8)
+      if (!bets?.length) {
+        await sendMsg(chatId, '📭 No hay apuestas pendientes para editar.', mainMenuKb())
+      } else {
+        await sendMsg(chatId, '✏️ <b>¿Qué apuesta editas?</b>', editBetsKb(bets))
       }
       return NextResponse.json({ ok: true })
     }
@@ -1064,6 +1345,41 @@ export async function POST(request: NextRequest) {
           `🏦 <b>${session.data.bk}</b>\n${matchLine}\n📌 ¿Qué tipo de pick?\n\nSeleccionado: <b>${picks.join(' + ')}</b>`,
           categoryKb(picks)
         )
+        return NextResponse.json({ ok: true })
+      }
+
+      // Edit bet fields
+      if (session?.step === 'typing_edit_odds') {
+        const odds = parseFloat(rawText.replace(',', '.'))
+        if (isNaN(odds) || odds < 1.01 || odds > 500) {
+          await sendMsg(chatId, '❌ Cuota inválida. Ej: <code>3.90</code>')
+          return NextResponse.json({ ok: true })
+        }
+        await supabase.from('bets').update({ odds }).eq('id', session.data.editBetId)
+        await clearSession(supabase, chatId)
+        await sendMsg(chatId, `✅ Cuota actualizada a <b>${odds}</b>.`, mainMenuKb())
+        return NextResponse.json({ ok: true })
+      }
+
+      if (session?.step === 'typing_edit_pick') {
+        await supabase.from('bets').update({ pick: rawText }).eq('id', session.data.editBetId)
+        await clearSession(supabase, chatId)
+        await sendMsg(chatId, `✅ Pick actualizado a <b>${rawText}</b>.`, mainMenuKb())
+        return NextResponse.json({ ok: true })
+      }
+
+      if (session?.step === 'typing_edit_stake') {
+        const stake = parseFloat(rawText.replace(',', '.'))
+        if (isNaN(stake) || stake <= 0) {
+          await sendMsg(chatId, '❌ Importe inválido. Ej: <code>25</code>')
+          return NextResponse.json({ ok: true })
+        }
+        const settings = await getUserSettings(supabase, userId)
+        const unitValue = settings?.unit_value || 10
+        const units = Math.round((stake / unitValue) * 100) / 100
+        await supabase.from('bets').update({ stake, units }).eq('id', session.data.editBetId)
+        await clearSession(supabase, chatId)
+        await sendMsg(chatId, `✅ Importe actualizado a <b>€${stake.toFixed(2)}</b> (${units}u).`, mainMenuKb())
         return NextResponse.json({ ok: true })
       }
 
