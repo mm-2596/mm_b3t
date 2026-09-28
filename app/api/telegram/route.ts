@@ -43,7 +43,7 @@ async function answerCQ(id: string) {
 }
 
 // ── Football API (ESPN — free, no key) ───────────────────────────────────────
-interface Fixture { home: string; away: string; time: string }
+interface Fixture { home: string; away: string; time: string; id?: string }
 
 const LEAGUE_MAP: Record<string, string> = {
   'Liga EA Sports':   'esp.1',
@@ -79,8 +79,30 @@ async function fetchTodayFixtures(comp: string): Promise<Fixture[]> {
       const competitors: any[] = e.competitions?.[0]?.competitors || []
       const home = shorten(competitors.find((c: any) => c.homeAway === 'home')?.team?.shortDisplayName || competitors.find((c: any) => c.homeAway === 'home')?.team?.displayName || '')
       const away = shorten(competitors.find((c: any) => c.homeAway === 'away')?.team?.shortDisplayName || competitors.find((c: any) => c.homeAway === 'away')?.team?.displayName || '')
-      return { home, away, time: toMadridTime(e.date) }
+      return { home, away, time: toMadridTime(e.date), id: e.id }
     }).filter((f: Fixture) => f.home && f.away)
+  } catch { return [] }
+}
+
+interface LineupTeam { teamName: string; players: string[] }
+
+async function fetchLineup(leagueSlug: string, eventId: string): Promise<LineupTeam[]> {
+  try {
+    const res = await fetch(
+      `https://site.api.espn.com/apis/site/v2/sports/soccer/${leagueSlug}/summary?event=${eventId}`,
+      { cache: 'no-store' }
+    )
+    const data = await res.json()
+    if (!Array.isArray(data.rosters) || data.rosters.length === 0) return []
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (data.rosters as any[]).slice(0, 2).map(r => ({
+      teamName: r.team?.shortDisplayName || r.team?.displayName || '',
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      players: (r.roster as any[] || [])
+        .filter((p: any) => p.starter)
+        .map((p: any) => p.athlete?.shortName || p.athlete?.displayName || '')
+        .filter(Boolean).slice(0, 11),
+    })).filter(t => t.players.length > 0)
   } catch { return [] }
 }
 
@@ -100,6 +122,11 @@ interface SessionData {
   mixFixtures?: Array<{ match: string }>
   mixBrowseFixtures?: Fixture[]
   pickCategory?: string
+  matchId?: string
+  leagueSlug?: string
+  lineup?: LineupTeam[]
+  lineupTeamIdx?: number
+  lineupPlayer?: string
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -226,7 +253,7 @@ function typeKb() {
   }
 }
 
-function categoryKb(selectedPicks: string[]) {
+function categoryKb(selectedPicks: string[], hasLineup = false) {
   const rows: { text: string; callback_data: string }[][] = [
     [
       { text: '⚽ Resultado', callback_data: 'cat:resultado' },
@@ -236,12 +263,53 @@ function categoryKb(selectedPicks: string[]) {
       { text: '📐 Corners', callback_data: 'cat:corners' },
       { text: '🟨 Tarjetas', callback_data: 'cat:tarjetas' },
     ],
-    [{ text: '✏️ Otro pick', callback_data: 'pk_custom' }],
   ]
+  if (hasLineup) rows.push([{ text: '👤 Jugadores', callback_data: 'cat:jugadores' }])
+  rows.push([{ text: '✏️ Otro pick', callback_data: 'pk_custom' }])
   if (selectedPicks.length > 0) {
     rows.push([{ text: `✅ Listo — ${selectedPicks.join(' + ')}`, callback_data: 'pk_done' }])
   }
   return { inline_keyboard: rows }
+}
+
+function lineupTeamsKb(lineup: LineupTeam[]) {
+  return {
+    inline_keyboard: [
+      lineup.map((t, i) => ({ text: t.teamName, callback_data: `lnt:${i}` })),
+      [{ text: '⬅️ Categorías', callback_data: 'pk_back' }],
+    ],
+  }
+}
+
+function lineupPlayersKb(players: string[], selectedPicks: string[]) {
+  const rows: { text: string; callback_data: string }[][] = []
+  for (let i = 0; i < players.length; i += 2) {
+    rows.push(players.slice(i, i + 2).map((p, j) => ({
+      text: selectedPicks.some(pick => pick.includes(p)) ? `✅ ${p}` : p,
+      callback_data: `lnp:${i + j}`,
+    })))
+  }
+  rows.push([{ text: '⬅️ Equipos', callback_data: 'lnt_back' }])
+  if (selectedPicks.length > 0) {
+    rows.push([{ text: `✅ Listo — ${selectedPicks.join(' + ')}`, callback_data: 'pk_done' }])
+  }
+  return { inline_keyboard: rows }
+}
+
+function lineupActionKb(player: string) {
+  return {
+    inline_keyboard: [
+      [
+        { text: '⚽ Gol', callback_data: 'lna:gol' },
+        { text: '🎯 Tiro a puerta', callback_data: 'lna:tiro' },
+      ],
+      [
+        { text: '🟨 Tarjeta', callback_data: 'lna:tarjeta' },
+        { text: '🎖️ Asistencia', callback_data: 'lna:asistencia' },
+      ],
+      [{ text: `⬅️ ${player}`, callback_data: 'lnp_back' }],
+    ],
+  }
 }
 
 function categoryPicksKb(category: string, selectedPicks: string[]) {
@@ -371,9 +439,10 @@ export async function POST(request: NextRequest) {
             mixLeagueKb(0)
           )
         } else {
+          const leagueSlug = LEAGUE_MAP[comp] || ''
           const fixtures = await fetchTodayFixtures(comp)
           if (fixtures.length > 0) {
-            await setSession(supabase, chatId, 'match', { ...session.data, comp, fixtures })
+            await setSession(supabase, chatId, 'match', { ...session.data, comp, leagueSlug, fixtures })
             await editMsg(chatId, messageId,
               `🏦 <b>${session.data.bk}</b> · 🏆 <b>${comp}</b>\n\n⚽ Partidos de hoy — elige el tuyo:`,
               fixturesSingleKb(fixtures)
@@ -398,7 +467,7 @@ export async function POST(request: NextRequest) {
         const f = session?.data.fixtures?.[idx]
         if (!f) return NextResponse.json({ ok: true })
         const match = `${f.home} vs ${f.away}`
-        await setSession(supabase, chatId, 'type', { ...session!.data, match, fixtures: undefined })
+        await setSession(supabase, chatId, 'type', { ...session!.data, match, matchId: f.id, fixtures: undefined })
         await editMsg(chatId, messageId,
           `🏦 <b>${session!.data.bk}</b> · 🏆 <b>${session!.data.comp}</b>\n⚽ <b>${match}</b>\n\n¿Qué tipo de apuesta?`,
           typeKb()
@@ -516,7 +585,7 @@ export async function POST(request: NextRequest) {
         const matchLine = session.data.match ? `⚽ <b>${session.data.match}</b>\n` : ''
         await editMsg(chatId, messageId,
           `🏦 <b>${session.data.bk}</b> | ${betType === 'funbet' ? '🎉 Funbet' : '🎯 Pick'}\n${matchLine}\n📌 ¿Qué tipo de pick?`,
-          categoryKb([])
+          categoryKb([], !!session.data.matchId)
         )
         return NextResponse.json({ ok: true })
       }
@@ -532,6 +601,97 @@ export async function POST(request: NextRequest) {
         await editMsg(chatId, messageId,
           `${labels[cat]} — elige tu pick:` + (picks.length ? `\n\nYa seleccionado: <b>${picks.join(' + ')}</b>` : ''),
           categoryPicksKb(cat, picks)
+        )
+        return NextResponse.json({ ok: true })
+      }
+
+      // ── Jugadores: fetch lineup ─────────────────────────────────────────
+      if (cbData === 'cat:jugadores') {
+        const session = await getSession(supabase, chatId)
+        if (!session?.data.matchId || !session.data.leagueSlug) return NextResponse.json({ ok: true })
+        const lineup = await fetchLineup(session.data.leagueSlug, session.data.matchId)
+        if (lineup.length === 0) {
+          await editMsg(chatId, messageId,
+            `⚠️ Alineaciones aún no disponibles (suelen publicarse ~1h antes).\n\nUsa ✏️ Otro pick para escribir manualmente.`,
+            categoryKb(session.data.picks || [], true)
+          )
+        } else {
+          await setSession(supabase, chatId, 'picks', { ...session.data, lineup, lineupTeamIdx: undefined, lineupPlayer: undefined })
+          await editMsg(chatId, messageId, `👤 ¿De qué equipo?`, lineupTeamsKb(lineup))
+        }
+        return NextResponse.json({ ok: true })
+      }
+
+      // ── Jugadores: team selected ────────────────────────────────────────
+      if (cbData.startsWith('lnt:')) {
+        const idx = parseInt(cbData.slice(4))
+        const session = await getSession(supabase, chatId)
+        const lineup = session?.data.lineup
+        if (!lineup?.[idx]) return NextResponse.json({ ok: true })
+        await setSession(supabase, chatId, 'picks', { ...session!.data, lineupTeamIdx: idx, lineupPlayer: undefined })
+        const picks = session!.data.picks || []
+        await editMsg(chatId, messageId,
+          `👤 <b>${lineup[idx].teamName}</b> — elige el jugador:`,
+          lineupPlayersKb(lineup[idx].players, picks)
+        )
+        return NextResponse.json({ ok: true })
+      }
+
+      // ── Jugadores: back to team selector ───────────────────────────────
+      if (cbData === 'lnt_back') {
+        const session = await getSession(supabase, chatId)
+        const lineup = session?.data.lineup
+        if (!lineup) return NextResponse.json({ ok: true })
+        await setSession(supabase, chatId, 'picks', { ...session!.data, lineupPlayer: undefined })
+        await editMsg(chatId, messageId, `👤 ¿De qué equipo?`, lineupTeamsKb(lineup))
+        return NextResponse.json({ ok: true })
+      }
+
+      // ── Jugadores: player selected → show actions ───────────────────────
+      if (cbData.startsWith('lnp:')) {
+        const idx = parseInt(cbData.slice(4))
+        const session = await getSession(supabase, chatId)
+        const teamIdx = session?.data.lineupTeamIdx ?? 0
+        const player = session?.data.lineup?.[teamIdx]?.players?.[idx]
+        if (!player) return NextResponse.json({ ok: true })
+        await setSession(supabase, chatId, 'picks', { ...session!.data, lineupPlayer: player })
+        await editMsg(chatId, messageId,
+          `👤 <b>${player}</b> — ¿qué tipo de apuesta?`,
+          lineupActionKb(player)
+        )
+        return NextResponse.json({ ok: true })
+      }
+
+      // ── Jugadores: back to player list ──────────────────────────────────
+      if (cbData === 'lnp_back') {
+        const session = await getSession(supabase, chatId)
+        const lineup = session?.data.lineup
+        const teamIdx = session?.data.lineupTeamIdx ?? 0
+        if (!lineup?.[teamIdx]) return NextResponse.json({ ok: true })
+        await setSession(supabase, chatId, 'picks', { ...session!.data, lineupPlayer: undefined })
+        const picks = session!.data.picks || []
+        await editMsg(chatId, messageId,
+          `👤 <b>${lineup[teamIdx].teamName}</b> — elige el jugador:`,
+          lineupPlayersKb(lineup[teamIdx].players, picks)
+        )
+        return NextResponse.json({ ok: true })
+      }
+
+      // ── Jugadores: action selected → save pick ──────────────────────────
+      if (cbData.startsWith('lna:')) {
+        const action = cbData.slice(4)
+        const session = await getSession(supabase, chatId)
+        const player = session?.data.lineupPlayer
+        if (!player) return NextResponse.json({ ok: true })
+        const actionLabels: Record<string, string> = { gol: '⚽ gol', tiro: '🎯 tiro', tarjeta: '🟨 tarjeta', asistencia: '🎖️ asistencia' }
+        const pick = `${player} ${actionLabels[action] || action}`
+        const picks = [...(session!.data.picks || []), pick]
+        await setSession(supabase, chatId, 'picks', { ...session!.data, picks, lineupPlayer: undefined, pickCategory: undefined })
+        const matchLine = session!.data.match ? `⚽ <b>${session!.data.match}</b>\n` : ''
+        await editMsg(chatId, messageId,
+          `✅ <b>${pick}</b> añadido\n\n🏦 <b>${session!.data.bk}</b>\n${matchLine}\n📌 ¿Qué tipo de pick?` +
+          `\n\nSeleccionado: <b>${picks.join(' + ')}</b>`,
+          categoryKb(picks, true)
         )
         return NextResponse.json({ ok: true })
       }
@@ -569,12 +729,12 @@ export async function POST(request: NextRequest) {
         const session = await getSession(supabase, chatId)
         if (!session?.data.bk) return NextResponse.json({ ok: true })
         const picks = session.data.picks || []
-        await setSession(supabase, chatId, 'picks', { ...session.data, pickCategory: undefined })
+        await setSession(supabase, chatId, 'picks', { ...session.data, pickCategory: undefined, lineup: undefined, lineupTeamIdx: undefined, lineupPlayer: undefined })
         const matchLine = session.data.match ? `⚽ <b>${session.data.match}</b>\n` : ''
         await editMsg(chatId, messageId,
           `🏦 <b>${session.data.bk}</b>\n${matchLine}\n📌 ¿Qué tipo de pick?` +
           (picks.length ? `\n\nSeleccionado: <b>${picks.join(' + ')}</b>` : ''),
-          categoryKb(picks)
+          categoryKb(picks, !!session.data.matchId)
         )
         return NextResponse.json({ ok: true })
       }
