@@ -93,16 +93,33 @@ async function fetchLineup(leagueSlug: string, eventId: string): Promise<LineupT
       { cache: 'no-store' }
     )
     const data = await res.json()
-    if (!Array.isArray(data.rosters) || data.rosters.length === 0) return []
+
+    // ESPN can return rosters at top level or inside boxscore
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return (data.rosters as any[]).slice(0, 2).map(r => ({
-      teamName: r.team?.shortDisplayName || r.team?.displayName || '',
+    const rosters: any[] = Array.isArray(data.rosters) ? data.rosters
+      : Array.isArray(data.boxscore?.players) ? data.boxscore.players
+      : []
+
+    if (rosters.length === 0) return []
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return rosters.slice(0, 2).map(r => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      players: (r.roster as any[] || [])
-        .filter((p: any) => p.starter)
-        .map((p: any) => p.athlete?.shortName || p.athlete?.displayName || '')
-        .filter(Boolean).slice(0, 11),
-    })).filter(t => t.players.length > 0)
+      const roster: any[] = r.roster || r.athletes || []
+      // starter can be boolean true OR a number > 0 (lineup position)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const starters = roster.filter((p: any) => p.starter === true || (typeof p.starter === 'number' && p.starter > 0))
+      // fallback: if no starters flagged, take first 11 active players
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const players = (starters.length >= 5 ? starters : roster.filter((p: any) => p.active !== false))
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        .map((p: any) => p.athlete?.shortName || p.athlete?.displayName || p.displayName || '')
+        .filter(Boolean).slice(0, 11)
+      return {
+        teamName: r.team?.shortDisplayName || r.team?.displayName || '',
+        players,
+      }
+    }).filter(t => t.players.length > 0)
   } catch { return [] }
 }
 
@@ -128,6 +145,7 @@ interface SessionData {
   lineupTeamIdx?: number
   lineupPlayer?: string
   editBetId?: string
+  selectedBetIds?: string[]
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -270,10 +288,30 @@ function categoryKb(selectedPicks: string[], hasLineup = false) {
     ],
   ]
   if (hasLineup) rows.push([{ text: '👤 Jugadores', callback_data: 'cat:jugadores' }])
-  rows.push([{ text: '✏️ Otro pick', callback_data: 'pk_custom' }])
+  rows.push([
+    { text: '✏️ Otro pick', callback_data: 'pk_custom' },
+    { text: '⏭️ Saltar', callback_data: 'pk_skip' },
+  ])
   if (selectedPicks.length > 0) {
     rows.push([{ text: `✅ Listo — ${selectedPicks.join(' + ')}`, callback_data: 'pk_done' }])
   }
+  return { inline_keyboard: rows }
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function multiSettleKb(bets: any[], selectedIds: string[], status: string) {
+  const statusLabel: Record<string, string> = { won: '✅ Ganada', lost: '❌ Perdida', void: '↩️ Anulada', cashout: '💸 Cashout' }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const rows = bets.map((b: any) => {
+    const name = b.match !== 'Apuesta' ? b.match : `${b.pick} @ ${b.odds}`
+    const short = name.length > 28 ? name.slice(0, 27) + '…' : name
+    const sel = selectedIds.includes(b.id)
+    return [{ text: `${sel ? '✅' : '◻️'} ${short}`, callback_data: `ms:${b.id}` }]
+  })
+  if (selectedIds.length > 0) {
+    rows.push([{ text: `${statusLabel[status]} — ${selectedIds.length} apuesta${selectedIds.length > 1 ? 's' : ''}`, callback_data: 'ms_confirm' }])
+  }
+  rows.push([{ text: '❌ Cancelar', callback_data: 'cancel' }])
   return { inline_keyboard: rows }
 }
 
@@ -436,7 +474,7 @@ function summaryText(bk: string, comp: string, match: string, betType: string, p
     `🏦 ${bk} | ${typeLabel}\n` +
     `🏆 <b>${comp}</b>\n` +
     (match && match !== 'Apuesta' ? `⚽ <b>${match}</b>\n` : '') +
-    `📌 Pick: <b>${picks.join(' + ')}</b>\n` +
+    (picks.length > 0 ? `📌 Pick: <b>${picks.join(' + ')}</b>\n` : '') +
     `📊 Cuota: <b>${odds}</b>\n` +
     `💵 Apostado: <b>€${stake.toFixed(2)}</b> (${units}u)\n` +
     `💰 Ganancias: <b>+€${profit.toFixed(2)}</b>\n` +
@@ -880,6 +918,79 @@ export async function POST(request: NextRequest) {
         await setSession(supabase, chatId, 'typing_pick', session.data)
         await editMsg(chatId, messageId,
           `✏️ Escribe el pick (ej: <code>Mbappé tiro a puerta</code>):`
+        )
+        return NextResponse.json({ ok: true })
+      }
+
+      // ── Skip pick → go straight to odds ────────────────────────────────
+      if (cbData === 'pk_skip') {
+        const session = await getSession(supabase, chatId)
+        if (!session?.data.bk) return NextResponse.json({ ok: true })
+        await setSession(supabase, chatId, 'odds', { ...session.data, picks: [], pickCategory: undefined })
+        const matchLine = session.data.match ? `⚽ <b>${session.data.match}</b>\n` : ''
+        await editMsg(chatId, messageId,
+          `🏦 <b>${session.data.bk}</b>\n${matchLine}\n📊 ¿Cuál es la <b>cuota</b>?`,
+          oddsKb()
+        )
+        return NextResponse.json({ ok: true })
+      }
+
+      // ── Multi-settle: toggle bet ────────────────────────────────────────
+      if (cbData.startsWith('ms:')) {
+        const betId = cbData.slice(3)
+        const session = await getSession(supabase, chatId)
+        if (!session || session.step !== 'multi_settle') return NextResponse.json({ ok: true })
+        const selectedBetIds = session.data.selectedBetIds || []
+        const newSelected = selectedBetIds.includes(betId)
+          ? selectedBetIds.filter((id: string) => id !== betId)
+          : [...selectedBetIds, betId]
+        await setSession(supabase, chatId, 'multi_settle', { ...session.data, selectedBetIds: newSelected })
+        const { data: pendingBets } = await supabase
+          .from('bets').select('*').eq('user_id', userId).eq('status', 'pending')
+          .order('created_at', { ascending: false }).limit(8)
+        const statusLabel: Record<string, string> = { won: '✅ Ganada', lost: '❌ Perdida', void: '↩️ Anulada', cashout: '💸 Cashout' }
+        await editMsg(chatId, messageId,
+          `${statusLabel[session.data.status!]} — Selecciona las apuestas y confirma:`,
+          multiSettleKb(pendingBets || [], newSelected, session.data.status!)
+        )
+        return NextResponse.json({ ok: true })
+      }
+
+      // ── Multi-settle: confirm ───────────────────────────────────────────
+      if (cbData === 'ms_confirm') {
+        const session = await getSession(supabase, chatId)
+        if (!session || session.step !== 'multi_settle') return NextResponse.json({ ok: true })
+        const { selectedBetIds, status, cashoutAmount } = session.data
+        if (!selectedBetIds?.length) return NextResponse.json({ ok: true })
+
+        let totalPL = 0
+        const settled: Array<{ name: string; resultAmount: number | null }> = []
+        for (const betId of selectedBetIds) {
+          const { data: bet } = await supabase.from('bets').select('*').eq('id', betId).single()
+          if (!bet) continue
+          let resultAmount: number | null = null
+          if (status === 'won') resultAmount = bet.stake * (bet.odds - 1)
+          else if (status === 'lost') resultAmount = -bet.stake
+          else if (status === 'void') resultAmount = 0
+          else if (status === 'cashout' && cashoutAmount) resultAmount = cashoutAmount - bet.stake
+          await supabase.from('bets').update({ status, result_amount: resultAmount }).eq('id', betId)
+          totalPL += resultAmount ?? 0
+          const name = bet.match !== 'Apuesta' ? bet.match : `${bet.pick} @ ${bet.odds}`
+          settled.push({ name, resultAmount })
+        }
+
+        await clearSession(supabase, chatId)
+        const e: Record<string, string> = { won: '✅', lost: '❌', void: '↩️', cashout: '💸' }
+        const list = settled.map(({ name, resultAmount }) => {
+          const short = name.length > 30 ? name.slice(0, 29) + '…' : name
+          const pl = resultAmount !== null
+            ? (resultAmount >= 0 ? ` <b>+€${resultAmount.toFixed(2)}</b>` : ` <b>-€${Math.abs(resultAmount).toFixed(2)}</b>`) : ''
+          return `${e[status!]} ${short}${pl}`
+        }).join('\n')
+        const plText = totalPL >= 0 ? `+€${totalPL.toFixed(2)}` : `-€${Math.abs(totalPL).toFixed(2)}`
+        await editMsg(chatId, messageId,
+          `<b>${settled.length} apuesta${settled.length > 1 ? 's' : ''} liquidada${settled.length > 1 ? 's' : ''}</b>\n\n${list}\n\n💰 P&L: <b>${plText}</b>`,
+          mainMenuKb()
         )
         return NextResponse.json({ ok: true })
       }
@@ -1456,18 +1567,16 @@ export async function POST(request: NextRequest) {
           return NextResponse.json({ ok: true })
         }
 
-        await setSession(supabase, chatId, 'selecting_bet', {
+        await setSession(supabase, chatId, 'multi_settle', {
           status: newStatus,
           cashoutAmount: cashoutAmount ?? undefined,
+          selectedBetIds: [],
         })
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const buttons = pendingBets.map((b: any) => [{
-          text: `${b.match !== 'Apuesta' ? b.match + ' — ' : ''}${b.pick} @ ${b.odds} | €${b.stake} | ${b.bookmaker}`,
-          callback_data: `sb:${b.id}`,
-        }])
-        buttons.push([{ text: '❌ Cancelar', callback_data: 'cancel' }])
         const statusLabel: Record<string, string> = { won: '✅ Ganada', lost: '❌ Perdida', void: '↩️ Anulada', cashout: '💸 Cashout' }
-        await sendMsg(chatId, `${statusLabel[newStatus]} — ¿Cuál apuesta?`, { inline_keyboard: buttons })
+        await sendMsg(chatId,
+          `${statusLabel[newStatus]} — Selecciona las apuestas y confirma:`,
+          multiSettleKb(pendingBets, [], newStatus)
+        )
         return NextResponse.json({ ok: true })
       }
 
