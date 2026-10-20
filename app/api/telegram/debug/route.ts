@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { GoogleGenerativeAI } from '@google/generative-ai'
 
 const LEAGUE_MAP: Record<string, string> = {
   'Liga EA Sports':   'esp.1',
@@ -49,6 +50,30 @@ export async function GET(request: NextRequest) {
       })
     } catch (err) {
       return NextResponse.json({ error: String(err) })
+    }
+  }
+
+  // ?test=gemini → test Gemini API connection
+  if (searchParams.get('test') === 'gemini') {
+    const key = process.env.GEMINI_API_KEY
+    if (!key) return NextResponse.json({ error: 'GEMINI_API_KEY not set' })
+    try {
+      const genAI = new GoogleGenerativeAI(key)
+      const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
+      const result = await model.generateContent('Reply with just: {"ok":true}')
+      const text = result.response.text()
+      return NextResponse.json({ ok: true, model: 'gemini-1.5-flash', response: text })
+    } catch (err: unknown) {
+      // Try fallback model
+      try {
+        const genAI = new GoogleGenerativeAI(key)
+        const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
+        const result = await model.generateContent('Reply with just: {"ok":true}')
+        const text = result.response.text()
+        return NextResponse.json({ ok: true, model: 'gemini-2.0-flash', response: text })
+      } catch (err2: unknown) {
+        return NextResponse.json({ error: String(err), error2: String(err2) })
+      }
     }
   }
 
