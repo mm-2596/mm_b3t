@@ -161,7 +161,7 @@ async function getAIRecommendation(matches: Match[], date: string): Promise<Reco
 
   try {
     const genAI = new GoogleGenerativeAI(key)
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
+    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
     const result = await model.generateContent(prompt)
     const text = result.response.text().trim()
     const jsonMatch = text.match(/\{[\s\S]*?\}/)
@@ -209,7 +209,7 @@ async function getValueFromOdds(matches: OddsMatch[]): Promise<ValueRecommendati
 
   try {
     const genAI = new GoogleGenerativeAI(key)
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
+    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
     const result = await model.generateContent(prompt)
     const text = result.response.text().trim()
     const jsonMatch = text.match(/\{[\s\S]*?\}/)
