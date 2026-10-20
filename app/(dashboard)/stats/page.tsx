@@ -109,17 +109,22 @@ export default function StatsPage() {
       .sort((a, b) => b.profit - a.profit)
 
     // By bookmaker
-    const bookieMap: Record<string, { profit: number; bets: number; stake: number }> = {}
+    const bookieMap: Record<string, { profit: number; bets: number; stake: number; wins: number; losses: number; oddsSum: number }> = {}
     settled.forEach(bet => {
-      if (!bookieMap[bet.bookmaker]) bookieMap[bet.bookmaker] = { profit: 0, bets: 0, stake: 0 }
+      if (!bookieMap[bet.bookmaker]) bookieMap[bet.bookmaker] = { profit: 0, bets: 0, stake: 0, wins: 0, losses: 0, oddsSum: 0 }
       bookieMap[bet.bookmaker].profit += calcProfit(bet)
       bookieMap[bet.bookmaker].bets++
       bookieMap[bet.bookmaker].stake += bet.stake
+      bookieMap[bet.bookmaker].oddsSum += bet.odds
+      if (bet.status === 'won') bookieMap[bet.bookmaker].wins++
+      if (bet.status === 'lost') bookieMap[bet.bookmaker].losses++
     })
     const byBookmaker = Object.entries(bookieMap)
       .map(([bookie, d]) => ({
         bookie, ...d,
         roi: d.stake > 0 ? (d.profit / d.stake) * 100 : 0,
+        winRate: d.wins + d.losses > 0 ? (d.wins / (d.wins + d.losses)) * 100 : 0,
+        avgOdds: d.bets > 0 ? d.oddsSum / d.bets : 0,
       }))
       .sort((a, b) => b.profit - a.profit)
 
@@ -363,38 +368,82 @@ export default function StatsPage() {
 
       {/* By Bookmaker */}
       {stats.byBookmaker.length > 0 && (
-        <div className="rounded-xl border border-gray-700/50 bg-gray-800/50 overflow-hidden">
-          <div className="px-6 py-4 border-b border-gray-700/50">
-            <h2 className="text-sm font-semibold text-gray-100">Por Casa de Apuestas</h2>
+        <div className="space-y-4">
+          {/* Bar chart P&L por casa */}
+          <div className="rounded-xl border border-gray-700/50 bg-gray-800/50 p-6">
+            <h2 className="text-sm font-semibold text-gray-100 mb-5">P&L por Casa de Apuestas</h2>
+            <ResponsiveContainer width="100%" height={Math.max(160, stats.byBookmaker.length * 44)}>
+              <BarChart
+                data={stats.byBookmaker}
+                layout="vertical"
+                margin={{ top: 0, right: 16, left: 0, bottom: 0 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" stroke="#374151" horizontal={false} />
+                <XAxis
+                  type="number"
+                  tickFormatter={v => `€${v}`}
+                  tick={{ fill: '#9ca3af', fontSize: 11 }}
+                  tickLine={false}
+                  axisLine={false}
+                />
+                <YAxis
+                  type="category"
+                  dataKey="bookie"
+                  tick={{ fill: '#d1d5db', fontSize: 12 }}
+                  tickLine={false}
+                  axisLine={false}
+                  width={80}
+                />
+                <Tooltip content={<CustomTooltip />} />
+                <Bar dataKey="profit" name="P&L" radius={[0, 4, 4, 0]}>
+                  {stats.byBookmaker.map((e, i) => (
+                    <Cell key={i} fill={e.profit >= 0 ? '#10b981' : '#f87171'} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
           </div>
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-gray-700/30">
-                <th className="text-left px-4 py-3 text-xs font-medium text-gray-400 uppercase">Casa</th>
-                <th className="hidden sm:table-cell text-right px-4 py-3 text-xs font-medium text-gray-400 uppercase">Ap.</th>
-                <th className="hidden sm:table-cell text-right px-4 py-3 text-xs font-medium text-gray-400 uppercase">Stake</th>
-                <th className="text-right px-4 py-3 text-xs font-medium text-gray-400 uppercase">ROI</th>
-                <th className="text-right px-4 py-3 text-xs font-medium text-gray-400 uppercase">P&L</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-700/20">
-              {stats.byBookmaker.map(row => (
-                <tr key={row.bookie} className="hover:bg-gray-700/20 transition-colors">
-                  <td className="px-4 py-3 text-sm font-medium text-gray-100">{row.bookie}</td>
-                  <td className="hidden sm:table-cell px-4 py-3 text-sm text-gray-300 text-right">{row.bets}</td>
-                  <td className="hidden sm:table-cell px-4 py-3 text-sm text-gray-300 text-right">{formatCurrency(row.stake)}</td>
-                  <td className="px-4 py-3 text-sm text-right">
-                    <span className={row.roi >= 0 ? 'text-green-400' : 'text-red-400'}>{row.roi.toFixed(1)}%</span>
-                  </td>
-                  <td className="px-4 py-3 text-sm font-semibold text-right">
-                    <span className={row.profit >= 0 ? 'text-green-400' : 'text-red-400'}>
-                      {row.profit >= 0 ? '+' : ''}{formatCurrency(row.profit)}
-                    </span>
-                  </td>
+
+          {/* Tabla detallada */}
+          <div className="rounded-xl border border-gray-700/50 bg-gray-800/50 overflow-hidden">
+            <div className="px-6 py-4 border-b border-gray-700/50">
+              <h2 className="text-sm font-semibold text-gray-100">Detalle por Casa</h2>
+            </div>
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-gray-700/30">
+                  <th className="text-left px-4 py-3 text-xs font-medium text-gray-400 uppercase">Casa</th>
+                  <th className="hidden sm:table-cell text-right px-4 py-3 text-xs font-medium text-gray-400 uppercase">Ap.</th>
+                  <th className="hidden sm:table-cell text-right px-4 py-3 text-xs font-medium text-gray-400 uppercase">W/L</th>
+                  <th className="text-right px-4 py-3 text-xs font-medium text-gray-400 uppercase">% Ac.</th>
+                  <th className="hidden sm:table-cell text-right px-4 py-3 text-xs font-medium text-gray-400 uppercase">C. Media</th>
+                  <th className="text-right px-4 py-3 text-xs font-medium text-gray-400 uppercase">ROI</th>
+                  <th className="text-right px-4 py-3 text-xs font-medium text-gray-400 uppercase">P&L</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-gray-700/20">
+                {stats.byBookmaker.map(row => (
+                  <tr key={row.bookie} className="hover:bg-gray-700/20 transition-colors">
+                    <td className="px-4 py-3 text-sm font-medium text-gray-100">{row.bookie}</td>
+                    <td className="hidden sm:table-cell px-4 py-3 text-sm text-gray-300 text-right">{row.bets}</td>
+                    <td className="hidden sm:table-cell px-4 py-3 text-sm text-gray-300 text-right">{row.wins}/{row.losses}</td>
+                    <td className="px-4 py-3 text-sm text-right">
+                      <span className={row.winRate >= 50 ? 'text-green-400' : 'text-red-400'}>{row.winRate.toFixed(1)}%</span>
+                    </td>
+                    <td className="hidden sm:table-cell px-4 py-3 text-sm text-gray-300 text-right">{row.avgOdds.toFixed(2)}</td>
+                    <td className="px-4 py-3 text-sm text-right">
+                      <span className={row.roi >= 0 ? 'text-green-400' : 'text-red-400'}>{row.roi.toFixed(1)}%</span>
+                    </td>
+                    <td className="px-4 py-3 text-sm font-semibold text-right">
+                      <span className={row.profit >= 0 ? 'text-green-400' : 'text-red-400'}>
+                        {row.profit >= 0 ? '+' : ''}{formatCurrency(row.profit)}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </div>
