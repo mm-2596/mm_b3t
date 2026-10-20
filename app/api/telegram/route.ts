@@ -219,6 +219,7 @@ interface SessionData {
   editBetId?: string
   selectedBetIds?: string[]
   photoExtracted?: boolean
+  valorPick?: string
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -272,6 +273,9 @@ function mainMenuKb() {
       [
         { text: '🛠️ Gestionar', callback_data: 'menu:gestionar' },
         { text: '🔔 Últimas 5', callback_data: 'menu:ultimas' },
+      ],
+      [
+        { text: '🔍 Analizar valor', callback_data: 'menu:valor' },
       ],
     ],
   }
@@ -497,6 +501,80 @@ function gestionarKb() {
       [{ text: '❌ Cancelar', callback_data: 'cancel' }],
     ],
   }
+}
+
+function valorCompKb() {
+  const comps = COMPETITIONS_LIST.filter(c => c !== 'MIX')
+  return {
+    inline_keyboard: [
+      comps.slice(0, 2).map(c => ({ text: c, callback_data: `vcomp:${c}` })),
+      comps.slice(2, 4).map(c => ({ text: c, callback_data: `vcomp:${c}` })),
+      comps.slice(4, 6).map(c => ({ text: c, callback_data: `vcomp:${c}` })),
+      comps.slice(6).map(c => ({ text: c, callback_data: `vcomp:${c}` })),
+      [{ text: '❌ Cancelar', callback_data: 'cancel' }],
+    ],
+  }
+}
+
+function valorFixturesKb(fixtures: Fixture[]) {
+  const rows = fixtures.map((f, i) => [{
+    text: `${f.time} ⚽ ${f.home} - ${f.away}`,
+    callback_data: `vfx:${i}`,
+  }])
+  rows.push([{ text: '❌ Cancelar', callback_data: 'cancel' }])
+  return { inline_keyboard: rows }
+}
+
+function valorPicksKb() {
+  return {
+    inline_keyboard: [
+      [
+        { text: '1 Local gana', callback_data: 'vpk:1' },
+        { text: 'X Empate', callback_data: 'vpk:X' },
+        { text: '2 Visitante gana', callback_data: 'vpk:2' },
+      ],
+      [
+        { text: 'Más de 2.5', callback_data: 'vpk:+2.5' },
+        { text: 'Menos de 2.5', callback_data: 'vpk:-2.5' },
+      ],
+      [
+        { text: 'Más de 1.5', callback_data: 'vpk:+1.5' },
+        { text: 'Más de 3.5', callback_data: 'vpk:+3.5' },
+      ],
+      [
+        { text: 'BTTS Sí', callback_data: 'vpk:BTTS_Si' },
+        { text: 'BTTS No', callback_data: 'vpk:BTTS_No' },
+      ],
+      [{ text: '❌ Cancelar', callback_data: 'cancel' }],
+    ],
+  }
+}
+
+async function analyzeValueBet(match: string, comp: string, pick: string, odds: number): Promise<{
+  probability: number; confidence: string; reasoning: string
+} | null> {
+  const key = process.env.GEMINI_API_KEY
+  if (!key) return null
+  const today = new Date().toISOString().split('T')[0]
+  const impliedProb = ((1 / odds) * 100).toFixed(1)
+  const prompt =
+    `Eres un analista experto en apuestas deportivas de fútbol.\n` +
+    `Fecha: ${today}. Partido: ${match}. Competición: ${comp}. Pick: ${pick}. Cuota: ${odds} (prob. implícita: ${impliedProb}%).\n\n` +
+    `Basándote en tu conocimiento de estos equipos, forma reciente e historial en esta competición, ` +
+    `estima la probabilidad REAL (0.01–0.99) de que ocurra el pick.\n\n` +
+    `Responde SOLO con JSON válido, sin texto adicional:\n` +
+    `{"probability":0.XX,"confidence":"alta|media|baja","reasoning":"máx 15 palabras"}`
+  try {
+    const genAI = new GoogleGenerativeAI(key)
+    const model = genAI.getGenerativeModel({ model: 'gemini-3.8-flash' })
+    const result = await model.generateContent(prompt)
+    const text = result.response.text().trim()
+    const jsonMatch = text.match(/\{[^}]+\}/)
+    if (!jsonMatch) return null
+    const parsed = JSON.parse(jsonMatch[0])
+    if (typeof parsed.probability !== 'number') return null
+    return parsed
+  } catch { return null }
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1210,6 +1288,60 @@ export async function POST(request: NextRequest) {
       }
 
       // ── Photo edit: keep extracted data, go back to bookmaker step ─────
+      // ── Valor: competition ─────────────────────────────────────────────
+      if (cbData === 'menu:valor') {
+        await clearSession(supabase, chatId)
+        await editMsg(chatId, messageId,
+          '🔍 <b>Analizar valor</b>\n\n¿De qué <b>competición</b> es el partido?',
+          valorCompKb()
+        )
+        return NextResponse.json({ ok: true })
+      }
+
+      if (cbData.startsWith('vcomp:')) {
+        const comp = cbData.slice(6)
+        const leagueSlug = LEAGUE_MAP[comp] || ''
+        const fixtures = await fetchTodayFixtures(comp)
+        if (fixtures.length > 0) {
+          await setSession(supabase, chatId, 'valor_match', { comp, leagueSlug, fixtures })
+          await editMsg(chatId, messageId,
+            `🔍 <b>${comp}</b>\n\n⚽ Elige el partido:`,
+            valorFixturesKb(fixtures)
+          )
+        } else {
+          await setSession(supabase, chatId, 'valor_match', { comp, leagueSlug, fixtures: [] })
+          await editMsg(chatId, messageId,
+            `🔍 <b>${comp}</b>\n\n⚠️ Sin partidos hoy. Escribe el partido (ej: <code>PSG vs Barcelona</code>):`
+          )
+        }
+        return NextResponse.json({ ok: true })
+      }
+
+      if (cbData.startsWith('vfx:')) {
+        const idx = parseInt(cbData.slice(4))
+        const session = await getSession(supabase, chatId)
+        const f = session?.data.fixtures?.[idx]
+        if (!f) return NextResponse.json({ ok: true })
+        const match = `${f.home} vs ${f.away}`
+        await setSession(supabase, chatId, 'valor_pick', { ...session!.data, match, fixtures: undefined })
+        await editMsg(chatId, messageId,
+          `🔍 <b>${session!.data.comp}</b> · <b>${match}</b>\n\n¿Qué pick quieres analizar?`,
+          valorPicksKb()
+        )
+        return NextResponse.json({ ok: true })
+      }
+
+      if (cbData.startsWith('vpk:')) {
+        const pick = cbData.slice(4).replace('_', ' ')
+        const session = await getSession(supabase, chatId)
+        if (!session?.data.match) return NextResponse.json({ ok: true })
+        await setSession(supabase, chatId, 'valor_odds', { ...session.data, valorPick: pick })
+        await editMsg(chatId, messageId,
+          `🔍 <b>${session.data.match}</b> · <b>${pick}</b>\n\n📊 ¿Cuál es la <b>cuota</b> que te ofrecen?\n\nEscribe el número (ej: <code>2.10</code>):`
+        )
+        return NextResponse.json({ ok: true })
+      }
+
       if (cbData === 'photo_edit') {
         const session = await getSession(supabase, chatId)
         await setSession(supabase, chatId, 'comp', {
@@ -1644,6 +1776,65 @@ export async function POST(request: NextRequest) {
         await supabase.from('bets').update({ stake, units }).eq('id', session.data.editBetId)
         await clearSession(supabase, chatId)
         await sendMsg(chatId, `✅ Importe actualizado a <b>€${stake.toFixed(2)}</b> (${units}u).`, mainMenuKb())
+        return NextResponse.json({ ok: true })
+      }
+
+      // ── Valor: partido escrito manualmente ──────────────────────────────
+      if (session?.step === 'valor_match') {
+        const match = rawText.trim()
+        await setSession(supabase, chatId, 'valor_pick', { ...session.data, match })
+        await sendMsg(chatId,
+          `🔍 <b>${session.data.comp}</b> · <b>${match}</b>\n\n¿Qué pick quieres analizar?`,
+          valorPicksKb()
+        )
+        return NextResponse.json({ ok: true })
+      }
+
+      // ── Valor: odds → análisis ───────────────────────────────────────────
+      if (session?.step === 'valor_odds') {
+        const odds = parseFloat(rawText.replace(',', '.'))
+        if (isNaN(odds) || odds < 1.01 || odds > 500) {
+          await sendMsg(chatId, '❌ Cuota inválida. Ej: <code>2.10</code>')
+          return NextResponse.json({ ok: true })
+        }
+        const { match, comp, valorPick } = session.data
+        const thinking = await sendMsgGetId(chatId, '🔍 Analizando probabilidades...')
+        const analysis = await analyzeValueBet(match!, comp!, valorPick!, odds)
+        if (thinking) await deleteMsg(chatId, thinking)
+
+        await clearSession(supabase, chatId)
+
+        if (!analysis) {
+          await sendMsg(chatId, '⚠️ No pude analizar este partido. Intenta con otro.', mainMenuKb())
+          return NextResponse.json({ ok: true })
+        }
+
+        const impliedProb = (1 / odds) * 100
+        const estProb = analysis.probability * 100
+        const edge = estProb - impliedProb
+        const ev = analysis.probability * (odds - 1) - (1 - analysis.probability)
+        const evPer10 = ev * 10
+
+        const confEmoji: Record<string, string> = { alta: '🟢', media: '🟡', baja: '🔴' }
+        const conf = confEmoji[analysis.confidence] || '🟡'
+        const hasValue = edge > 2
+        const verdict = hasValue
+          ? `✅ <b>Apuesta con valor</b> — puede merecer`
+          : `❌ <b>Sin valor claro</b> — la cuota no compensa`
+
+        await sendMsg(chatId,
+          `🔍 <b>Análisis de Valor</b>\n\n` +
+          `📋 ${match}\n` +
+          `🎯 ${valorPick}  ·  @${odds}\n` +
+          `🏆 ${comp}\n\n` +
+          `Prob. implícita:  <b>${impliedProb.toFixed(1)}%</b>\n` +
+          `Prob. estimada:   <b>${estProb.toFixed(1)}%</b>  ${conf} confianza ${analysis.confidence}\n\n` +
+          `📈 Ventaja: <b>${edge >= 0 ? '+' : ''}${edge.toFixed(1)}%</b>\n` +
+          `💰 Valor esp.: <b>${evPer10 >= 0 ? '+' : ''}€${evPer10.toFixed(2)}</b> por cada €10\n\n` +
+          `${verdict}\n\n` +
+          `💬 <i>${analysis.reasoning}</i>`,
+          mainMenuKb()
+        )
         return NextResponse.json({ ok: true })
       }
 
