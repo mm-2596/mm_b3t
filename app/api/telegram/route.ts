@@ -727,7 +727,7 @@ async function settleBet(supabase: any, chatId: number, bet: any, status: string
     lines.push(`↩️ Stake devuelto: <b>€${Number(bet.stake).toFixed(2)}</b>`)
   }
 
-  await sendMsg(chatId, lines.join('\n'))
+  await sendMsg(chatId, lines.join('\n'), mainMenuKb())
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1592,13 +1592,13 @@ export async function POST(request: NextRequest) {
         .from('bets').select('*').eq('user_id', userId).eq('status', 'pending')
         .order('created_at', { ascending: false }).limit(5)
       if (!bets?.length) {
-        await sendMsg(chatId, '✅ No tienes apuestas pendientes.')
+        await sendMsg(chatId, '✅ No tienes apuestas pendientes.', mainMenuKb())
       } else {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const list = bets.map((b: any, i: number) =>
           `${i + 1}. <b>${b.match}</b> — ${b.pick} @ ${b.odds} | €${b.stake} (${b.units}u) — ${b.bookmaker}`
         ).join('\n\n')
-        await sendMsg(chatId, `📋 <b>Pendientes:</b>\n\n${list}`)
+        await sendMsg(chatId, `📋 <b>Pendientes:</b>\n\n${list}`, mainMenuKb())
       }
       return NextResponse.json({ ok: true })
     }
@@ -1635,11 +1635,12 @@ export async function POST(request: NextRequest) {
         .from('bets').select('*').eq('user_id', userId)
         .order('created_at', { ascending: false }).limit(1).single()
       if (!bet) {
-        await sendMsg(chatId, 'No hay apuestas aún.')
+        await sendMsg(chatId, 'No hay apuestas aún.', mainMenuKb())
       } else {
         const e: Record<string, string> = { pending: '⏳', won: '✅', lost: '❌', void: '↩️', cashout: '💸' }
         await sendMsg(chatId,
-          `${e[bet.status] || '?'} <b>${bet.match}</b>\n${bet.pick} @ ${bet.odds} | €${bet.stake} (${bet.units}u) — ${bet.bookmaker}\nEstado: <b>${bet.status}</b>`
+          `${e[bet.status] || '?'} <b>${bet.match}</b>\n${bet.pick} @ ${bet.odds} | €${bet.stake} (${bet.units}u) — ${bet.bookmaker}\nEstado: <b>${bet.status}</b>`,
+          mainMenuKb()
         )
       }
       return NextResponse.json({ ok: true })
@@ -1902,7 +1903,7 @@ export async function POST(request: NextRequest) {
           .order('created_at', { ascending: false }).limit(8)
 
         if (!pendingBets?.length) {
-          await sendMsg(chatId, '⚠️ No hay apuestas pendientes.')
+          await sendMsg(chatId, '⚠️ No hay apuestas pendientes.', mainMenuKb())
           return NextResponse.json({ ok: true })
         }
 
