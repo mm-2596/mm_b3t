@@ -180,7 +180,7 @@ export default function BankrollPage() {
                 labelFormatter={d => {
                   try { return format(parseISO(String(d)), "dd MMM yyyy", { locale: es }) } catch { return d }
                 }}
-                formatter={(value: number) => [`€${value.toFixed(2)}`, 'Bankroll']}
+                formatter={(value) => [`€${Number(value).toFixed(2)}`, 'Bankroll']}
               />
               <Area
                 type="monotone"
