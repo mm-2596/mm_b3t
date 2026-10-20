@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import Anthropic from '@anthropic-ai/sdk'
 
 export const maxDuration = 60
 
@@ -23,6 +24,26 @@ async function sendMsg(chatId: number, text: string, replyMarkup?: object) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML', reply_markup: replyMarkup }),
+  })
+}
+
+async function sendMsgGetId(chatId: number, text: string, replyMarkup?: object): Promise<number | null> {
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML', reply_markup: replyMarkup }),
+    })
+    const data = await res.json()
+    return data.result?.message_id ?? null
+  } catch { return null }
+}
+
+async function deleteMsg(chatId: number, messageId: number) {
+  await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/deleteMessage`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chat_id: chatId, message_id: messageId }),
   })
 }
 
@@ -123,6 +144,68 @@ async function fetchLineup(leagueSlug: string, eventId: string): Promise<LineupT
   } catch { return [] }
 }
 
+// ── Photo → AI bet extraction ─────────────────────────────────────────────────
+interface ExtractedBet {
+  bookmaker?: string
+  competition?: string
+  match?: string
+  picks?: string[]
+  odds?: number
+  stake?: number
+  betType?: string
+}
+
+async function extractBetFromPhoto(fileId: string): Promise<ExtractedBet | null> {
+  try {
+    // 1. Get file path from Telegram
+    const fileRes = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/getFile?file_id=${fileId}`)
+    const fileData = await fileRes.json()
+    const filePath = fileData.result?.file_path
+    if (!filePath) return null
+
+    // 2. Download image
+    const imgRes = await fetch(`https://api.telegram.org/file/bot${BOT_TOKEN}/${filePath}`)
+    const imgBuffer = await imgRes.arrayBuffer()
+    const base64 = Buffer.from(imgBuffer).toString('base64')
+    const mimeType = filePath.endsWith('.png') ? 'image/png' : 'image/jpeg'
+
+    // 3. Ask Claude to extract bet info
+    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY || '' })
+    const response = await anthropic.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 512,
+      messages: [{
+        role: 'user',
+        content: [
+          {
+            type: 'image',
+            source: { type: 'base64', media_type: mimeType as 'image/jpeg' | 'image/png', data: base64 },
+          },
+          {
+            type: 'text',
+            text: `Eres un asistente que extrae datos de tickets de apuestas deportivas.
+Analiza esta imagen y devuelve SOLO un JSON con estos campos (omite los que no puedas determinar):
+- bookmaker: casa de apuestas (Bet365, Winamax, William Hill, Bwin, Betfair u Otro)
+- competition: liga (Liga EA Sports, Premier League, Serie A, Bundesliga, Champions League, Copa del Rey, Nations League, u Otro)
+- match: "Equipo A vs Equipo B"
+- picks: array con los picks, ej: ["1", "Over 2.5"] o ["R. Lukaku gol"]
+- odds: cuota total como número
+- stake: importe apostado como número
+- betType: "pick" o "funbet"
+
+Devuelve ÚNICAMENTE JSON válido, sin texto adicional.`,
+          },
+        ],
+      }],
+    })
+
+    const text = response.content[0].type === 'text' ? response.content[0].text.trim() : ''
+    const jsonMatch = text.match(/\{[\s\S]*\}/)
+    if (!jsonMatch) return null
+    return JSON.parse(jsonMatch[0]) as ExtractedBet
+  } catch { return null }
+}
+
 // ── Session ───────────────────────────────────────────────────────────────────
 interface SessionData {
   bk?: string
@@ -146,6 +229,7 @@ interface SessionData {
   lineupPlayer?: string
   editBetId?: string
   selectedBetIds?: string[]
+  photoExtracted?: boolean
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1121,6 +1205,20 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ ok: true })
       }
 
+      // ── Photo edit: keep extracted data, go back to bookmaker step ─────
+      if (cbData === 'photo_edit') {
+        const session = await getSession(supabase, chatId)
+        await setSession(supabase, chatId, 'comp', {
+          bk: session?.data.bk || '',
+          picks: session?.data.picks || [],
+        })
+        await editMsg(chatId, messageId,
+          '🏦 ¿En qué <b>casa de apuestas</b>?',
+          bookmakersKb()
+        )
+        return NextResponse.json({ ok: true })
+      }
+
       if (cbData === 'cancel') {
         await clearSession(supabase, chatId)
         await editMsg(chatId, messageId, '❌ Cancelado.', mainMenuKb())
@@ -1413,7 +1511,58 @@ export async function POST(request: NextRequest) {
 
     if (message.photo) {
       await clearSession(supabase, chatId)
-      await sendMsg(chatId, '📸 ¿En qué <b>casa de apuestas</b>?', bookmakersKb())
+      const photos: { file_id: string; file_size?: number }[] = message.photo
+      const largest = photos[photos.length - 1]
+
+      const thinking = await sendMsgGetId(chatId, '📸 Analizando tu apuesta...')
+      const extracted = await extractBetFromPhoto(largest.file_id)
+
+      if (!extracted || (!extracted.match && !extracted.picks?.length)) {
+        if (thinking) await deleteMsg(chatId, thinking)
+        await sendMsg(chatId,
+          '❌ No pude leer la apuesta. Intenta con una foto más nítida o registra manualmente:',
+          mainMenuKb()
+        )
+        return NextResponse.json({ ok: true })
+      }
+
+      const settings = await getUserSettings(supabase, userId)
+      const unitValue = settings?.unit_value || 10
+      const stake = extracted.stake || 0
+      const odds = extracted.odds || 0
+      const units = stake > 0 ? Math.round((stake / unitValue) * 100) / 100 : 0
+
+      // Save extracted data to session for confirmation
+      await setSession(supabase, chatId, 'confirm', {
+        bk: extracted.bookmaker || 'Otro',
+        comp: extracted.competition || '',
+        match: extracted.match || 'Apuesta',
+        betType: extracted.betType || 'pick',
+        picks: extracted.picks || [],
+        odds,
+        stake,
+        photoExtracted: true,
+      })
+
+      if (thinking) await deleteMsg(chatId, thinking)
+
+      const lines: string[] = ['📋 <b>He detectado esta apuesta:</b>\n']
+      if (extracted.bookmaker) lines.push(`🏦 <b>${extracted.bookmaker}</b>`)
+      if (extracted.competition) lines.push(`🏆 ${extracted.competition}`)
+      if (extracted.match) lines.push(`⚽ <b>${extracted.match}</b>`)
+      if (extracted.picks?.length) lines.push(`📌 ${extracted.picks.join(' + ')}`)
+      if (odds) lines.push(`📊 Cuota: <b>${odds}</b>`)
+      if (stake) lines.push(`💵 Importe: <b>€${stake}</b> (${units}u)`)
+
+      lines.push('\n¿Es correcto?')
+
+      await sendMsg(chatId, lines.join('\n'), {
+        inline_keyboard: [[
+          { text: '✅ Sí, registrar', callback_data: 'cf' },
+          { text: '✏️ Editar', callback_data: 'photo_edit' },
+          { text: '❌ Cancelar', callback_data: 'cancel' },
+        ]],
+      })
       return NextResponse.json({ ok: true })
     }
 
