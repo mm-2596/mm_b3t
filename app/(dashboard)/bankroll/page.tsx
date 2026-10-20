@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useTransactions } from '@/hooks/useTransactions'
 import { useBets } from '@/hooks/useBets'
 import { Modal } from '@/components/ui/modal'
@@ -10,8 +10,12 @@ import { Select } from '@/components/ui/select'
 import { formatCurrency, calcProfit, BOOKMAKERS } from '@/lib/utils'
 import { Plus, ArrowUpRight, ArrowDownLeft, Trash2, TrendingUp, X } from 'lucide-react'
 import type { TransactionType } from '@/lib/database.types'
-import { format } from 'date-fns'
+import { format, parseISO } from 'date-fns'
 import { es } from 'date-fns/locale'
+import {
+  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
+  ResponsiveContainer, ReferenceLine,
+} from 'recharts'
 
 const BOOKMAKER_OPTIONS = BOOKMAKERS.map(b => ({ value: b, label: b }))
 const TYPE_OPTIONS = [
@@ -42,6 +46,32 @@ export default function BankrollPage() {
     .reduce((sum, b) => sum + calcProfit(b), 0)
 
   const currentBankroll = netBankroll + totalBettingProfit
+
+  // Build chronological bankroll evolution data
+  const chartData = useMemo(() => {
+    const events: { date: string; delta: number }[] = [
+      ...transactions.map(tx => ({
+        date: tx.date,
+        delta: tx.type === 'deposit' ? tx.amount : -tx.amount,
+      })),
+      ...bets
+        .filter(b => b.status !== 'pending')
+        .map(b => ({ date: b.date, delta: calcProfit(b) })),
+    ]
+    if (events.length === 0) return []
+    // Group deltas by day
+    const byDay = new Map<string, number>()
+    for (const e of events) {
+      byDay.set(e.date, (byDay.get(e.date) ?? 0) + e.delta)
+    }
+    let running = 0
+    return Array.from(byDay.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, delta]) => {
+        running += delta
+        return { date, bankroll: parseFloat(running.toFixed(2)) }
+      })
+  }, [transactions, bets])
 
   const set = (key: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     setForm(prev => ({ ...prev, [key]: e.target.value }))
@@ -111,6 +141,60 @@ export default function BankrollPage() {
           </p>
         </div>
       </div>
+
+      {/* Bankroll Evolution Chart */}
+      {chartData.length >= 2 && (
+        <div className="rounded-xl border border-gray-700/50 bg-gray-800/50 p-5">
+          <h2 className="text-sm font-semibold text-gray-100 mb-4">Evolución del Bankroll</h2>
+          <ResponsiveContainer width="100%" height={200}>
+            <AreaChart data={chartData} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
+              <defs>
+                <linearGradient id="bankrollGradient" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#34d399" stopOpacity={0.25} />
+                  <stop offset="95%" stopColor="#34d399" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="#374151" vertical={false} />
+              <XAxis
+                dataKey="date"
+                tickLine={false}
+                axisLine={false}
+                tick={{ fill: '#9ca3af', fontSize: 11 }}
+                tickFormatter={d => {
+                  try { return format(parseISO(d), 'dd MMM', { locale: es }) } catch { return d }
+                }}
+                minTickGap={40}
+              />
+              <YAxis
+                tickLine={false}
+                axisLine={false}
+                tick={{ fill: '#9ca3af', fontSize: 11 }}
+                tickFormatter={v => `€${v}`}
+                width={56}
+              />
+              <ReferenceLine y={0} stroke="#4b5563" strokeDasharray="4 4" />
+              <Tooltip
+                contentStyle={{ background: '#1f2937', border: '1px solid #374151', borderRadius: 8, fontSize: 13 }}
+                labelStyle={{ color: '#9ca3af', marginBottom: 4 }}
+                itemStyle={{ color: '#34d399' }}
+                labelFormatter={d => {
+                  try { return format(parseISO(String(d)), "dd MMM yyyy", { locale: es }) } catch { return d }
+                }}
+                formatter={(value: number) => [`€${value.toFixed(2)}`, 'Bankroll']}
+              />
+              <Area
+                type="monotone"
+                dataKey="bankroll"
+                stroke="#34d399"
+                strokeWidth={2}
+                fill="url(#bankrollGradient)"
+                dot={false}
+                activeDot={{ r: 4, fill: '#34d399', stroke: '#1f2937', strokeWidth: 2 }}
+              />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+      )}
 
       {/* Transactions list */}
       <div>
