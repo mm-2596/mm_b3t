@@ -59,7 +59,7 @@ export async function GET(request: NextRequest) {
     if (!key) return NextResponse.json({ error: 'GEMINI_API_KEY not set' })
     try {
       const genAI = new GoogleGenerativeAI(key)
-      const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
+      const model = genAI.getGenerativeModel({ model: 'gemini-3.8-flash' })
       const result = await model.generateContent('Reply with just: {"ok":true}')
       const text = result.response.text()
       return NextResponse.json({ ok: true, model: 'gemini-1.5-flash', response: text })
@@ -67,7 +67,7 @@ export async function GET(request: NextRequest) {
       // Try fallback model
       try {
         const genAI = new GoogleGenerativeAI(key)
-        const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
+        const model = genAI.getGenerativeModel({ model: 'gemini-3.8-flash' })
         const result = await model.generateContent('Reply with just: {"ok":true}')
         const text = result.response.text()
         return NextResponse.json({ ok: true, model: 'gemini-2.0-flash', response: text })
