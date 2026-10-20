@@ -11,7 +11,7 @@ import {
   formatCurrency, calcProfit, getStatusBg, STATUS_LABELS,
   SPORTS, BOOKMAKERS
 } from '@/lib/utils'
-import { Plus, Search, Pencil, Trash2, CheckCircle, X, ChevronRight } from 'lucide-react'
+import { Plus, Search, Pencil, Trash2, CheckCircle, X, ChevronRight, TrendingUp, SearchX } from 'lucide-react'
 import type { Bet, BetStatus } from '@/lib/database.types'
 import { format } from 'date-fns'
 
@@ -164,9 +164,42 @@ export default function BetsPage() {
           ))}
         </div>
       ) : filtered.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-gray-700 p-12 text-center">
-          <p className="text-gray-400">No se encontraron apuestas</p>
-        </div>
+        bets.length === 0 ? (
+          /* Sin apuestas aún */
+          <div className="rounded-xl border border-dashed border-gray-700 py-16 px-6 text-center">
+            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500/10">
+              <TrendingUp className="h-7 w-7 text-emerald-400" />
+            </div>
+            <h3 className="text-base font-semibold text-gray-100">Sin apuestas todavía</h3>
+            <p className="mt-1.5 text-sm text-gray-400 max-w-xs mx-auto">
+              Registra tu primera apuesta para empezar a seguir tu rendimiento
+            </p>
+            <Button
+              className="mt-5"
+              onClick={() => { setEditBet(undefined); setShowForm(true) }}
+            >
+              <Plus className="w-4 h-4 mr-2" /> Nueva Apuesta
+            </Button>
+          </div>
+        ) : (
+          /* Sin resultados con filtros activos */
+          <div className="rounded-xl border border-dashed border-gray-700 py-16 px-6 text-center">
+            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-gray-700/50">
+              <SearchX className="h-7 w-7 text-gray-400" />
+            </div>
+            <h3 className="text-base font-semibold text-gray-100">Sin resultados</h3>
+            <p className="mt-1.5 text-sm text-gray-400">
+              Ninguna apuesta coincide con los filtros actuales
+            </p>
+            <Button
+              variant="outline"
+              className="mt-5"
+              onClick={() => { setSearch(''); setFilterStatus(''); setFilterSport('') }}
+            >
+              Limpiar filtros
+            </Button>
+          </div>
+        )
       ) : (
         <div className="rounded-xl border border-gray-700/50 bg-gray-800/30 overflow-hidden">
           <div className="overflow-x-hidden">
