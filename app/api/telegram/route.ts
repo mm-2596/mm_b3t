@@ -628,13 +628,28 @@ async function settleBet(supabase: any, chatId: number, bet: any, status: string
 
   await supabase.from('bets').update({ status, result_amount: resultAmount }).eq('id', bet.id)
 
-  const e: Record<string, string> = { won: '✅', lost: '❌', void: '↩️', cashout: '💸' }
-  const profitText = resultAmount !== null
-    ? (resultAmount >= 0 ? `+€${resultAmount.toFixed(2)}` : `-€${Math.abs(resultAmount).toFixed(2)}`) : ''
-  const label = bet.match !== 'Apuesta' ? bet.match : `${bet.pick} @ ${bet.odds}`
-  await sendMsg(chatId,
-    `${e[status]} <b>${label}</b> — ${status}${profitText ? ` | ${profitText}` : ''}`
-  )
+  const emoji: Record<string, string> = { won: '✅', lost: '❌', void: '↩️', cashout: '💸' }
+  const label: Record<string, string> = { won: 'Ganada', lost: 'Perdida', void: 'Anulada', cashout: 'Cash Out' }
+  const matchName = bet.match !== 'Apuesta' ? bet.match : null
+
+  const lines: string[] = [
+    `${emoji[status]} <b>Apuesta ${label[status]}</b>`,
+    '',
+    matchName ? `📋 ${matchName}` : '',
+    `🎯 ${bet.pick}  ·  @${Number(bet.odds).toFixed(2)}`,
+    `💵 Stake: <b>€${Number(bet.stake).toFixed(2)}</b>  ·  ${bet.bookmaker}`,
+  ].filter(l => l !== undefined && !(l === '' && false))
+
+  if (resultAmount !== null && status !== 'void') {
+    const sign = resultAmount >= 0 ? '+' : ''
+    lines.push('')
+    lines.push(`💰 P&L: <b>${sign}€${resultAmount.toFixed(2)}</b>`)
+  } else if (status === 'void') {
+    lines.push('')
+    lines.push(`↩️ Stake devuelto: <b>€${Number(bet.stake).toFixed(2)}</b>`)
+  }
+
+  await sendMsg(chatId, lines.join('\n'))
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
