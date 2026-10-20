@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import Anthropic from '@anthropic-ai/sdk'
+import { GoogleGenerativeAI } from '@google/generative-ai'
 
 export const maxDuration = 60
 
@@ -169,21 +169,10 @@ async function extractBetFromPhoto(fileId: string): Promise<ExtractedBet | null>
     const base64 = Buffer.from(imgBuffer).toString('base64')
     const mimeType = filePath.endsWith('.png') ? 'image/png' : 'image/jpeg'
 
-    // 3. Ask Claude to extract bet info
-    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY || '' })
-    const response = await anthropic.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 512,
-      messages: [{
-        role: 'user',
-        content: [
-          {
-            type: 'image',
-            source: { type: 'base64', media_type: mimeType as 'image/jpeg' | 'image/png', data: base64 },
-          },
-          {
-            type: 'text',
-            text: `Eres un asistente que extrae datos de tickets de apuestas deportivas.
+    // 3. Ask Gemini to extract bet info (free tier: 1500 req/day)
+    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '')
+    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
+    const prompt = `Eres un asistente que extrae datos de tickets de apuestas deportivas.
 Analiza esta imagen y devuelve SOLO un JSON con estos campos (omite los que no puedas determinar):
 - bookmaker: casa de apuestas (Bet365, Winamax, William Hill, Bwin, Betfair u Otro)
 - competition: liga (Liga EA Sports, Premier League, Serie A, Bundesliga, Champions League, Copa del Rey, Nations League, u Otro)
@@ -193,13 +182,13 @@ Analiza esta imagen y devuelve SOLO un JSON con estos campos (omite los que no p
 - stake: importe apostado como número
 - betType: "pick" o "funbet"
 
-Devuelve ÚNICAMENTE JSON válido, sin texto adicional.`,
-          },
-        ],
-      }],
-    })
+Devuelve ÚNICAMENTE JSON válido, sin texto adicional.`
 
-    const text = response.content[0].type === 'text' ? response.content[0].text.trim() : ''
+    const result = await model.generateContent([
+      { inlineData: { data: base64, mimeType: mimeType as 'image/jpeg' | 'image/png' } },
+      prompt,
+    ])
+    const text = result.response.text().trim()
     const jsonMatch = text.match(/\{[\s\S]*\}/)
     if (!jsonMatch) return null
     return JSON.parse(jsonMatch[0]) as ExtractedBet
