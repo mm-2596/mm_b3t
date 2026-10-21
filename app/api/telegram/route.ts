@@ -566,7 +566,7 @@ async function analyzeValueBet(match: string, comp: string, pick: string, odds: 
     `{"probability":0.XX,"confidence":"alta|media|baja","reasoning":"máx 15 palabras"}`
   try {
     const genAI = new GoogleGenerativeAI(key)
-    const model = genAI.getGenerativeModel({ model: 'gemini-3.8-flash' })
+    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
     const result = await model.generateContent(prompt)
     const text = result.response.text().trim()
     const jsonMatch = text.match(/\{[^}]+\}/)
