@@ -231,16 +231,18 @@ async function extractBetFromPhoto(fileId: string): Promise<ExtractedBet | null>
     // 3. Ask Gemini to extract bet info (free tier: 1500 req/day)
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '')
     const model = genAI.getGenerativeModel({ model: 'gemini-3.8-flash' })
-    const prompt = `Eres un asistente que extrae datos de tickets de apuestas deportivas.
-Analiza esta imagen y devuelve SOLO un JSON con estos campos (omite los que no puedas determinar):
+    const prompt = `Eres un asistente experto en apuestas deportivas. Analiza esta imagen.
+Puede ser un ticket ya realizado, un resguardo, o una selección/apuesta que el usuario está a punto de hacer en una app de apuestas (Bet365, Winamax, Bwin, etc.).
+Extrae todos los datos visibles y devuelve SOLO un JSON con estos campos (omite los que no puedas determinar):
 - bookmaker: casa de apuestas (Bet365, Winamax, William Hill, Bwin, Betfair u Otro)
 - competition: liga (Liga EA Sports, Premier League, Serie A, Bundesliga, Champions League, Copa del Rey, Nations League, u Otro)
-- match: "Equipo A vs Equipo B"
-- picks: array con los picks, ej: ["1", "Over 2.5"] o ["R. Lukaku gol"]
-- odds: cuota total como número
-- stake: importe apostado como número
+- match: "Equipo A vs Equipo B" — busca los nombres de equipos en cualquier parte de la imagen
+- picks: array con las selecciones, ej: ["1", "Over 2.5", "BTTS Sí"] o ["Mbappé - Anytime Scorer"]
+- odds: cuota total o cuota de la selección como número decimal
+- stake: importe apostado como número (si lo hay)
 - betType: "pick" o "funbet"
 
+Si ves nombres de equipos, una cuota y alguna selección aunque sea parcial, inclúyelos.
 Devuelve ÚNICAMENTE JSON válido, sin texto adicional.`
 
     const result = await model.generateContent([
