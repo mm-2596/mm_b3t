@@ -250,10 +250,19 @@ Devuelve ÚNICAMENTE JSON válido, sin texto adicional.`
       prompt,
     ])
     const text = result.response.text().trim()
+    console.log('[extractBetFromPhoto] Gemini response:', text.slice(0, 500))
     const jsonMatch = text.match(/\{[\s\S]*\}/)
-    if (!jsonMatch) return null
-    return JSON.parse(jsonMatch[0]) as ExtractedBet
-  } catch { return null }
+    if (!jsonMatch) {
+      console.log('[extractBetFromPhoto] No JSON found in response')
+      return null
+    }
+    const parsed = JSON.parse(jsonMatch[0]) as ExtractedBet
+    console.log('[extractBetFromPhoto] Parsed:', JSON.stringify(parsed))
+    return parsed
+  } catch (e) {
+    console.error('[extractBetFromPhoto] Error:', e)
+    return null
+  }
 }
 
 // ── Session ───────────────────────────────────────────────────────────────────
@@ -1839,10 +1848,11 @@ export async function POST(request: NextRequest) {
       const thinking = await sendMsgGetId(chatId, '📸 Analizando tu apuesta...')
       const extracted = await extractBetFromPhoto(largest.file_id)
 
-      if (!extracted || (!extracted.match && !extracted.picks?.length)) {
+      // Fail only if we got truly nothing useful
+      if (!extracted || (!extracted.match && !extracted.picks?.length && !extracted.odds && !extracted.bookmaker)) {
         if (thinking) await deleteMsg(chatId, thinking)
         await sendMsg(chatId,
-          '❌ No pude leer la apuesta. Intenta con una foto más nítida o registra manualmente:',
+          '❌ No pude leer la apuesta. Asegúrate de que se vean el partido, la selección y la cuota, o registra manualmente:',
           mainMenuKb()
         )
         return NextResponse.json({ ok: true })
