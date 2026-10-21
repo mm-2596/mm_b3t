@@ -1484,6 +1484,60 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ ok: true })
       }
 
+      if (cbData === 'photo_valor') {
+        const session = await getSession(supabase, chatId)
+        const { match, comp, picks, odds } = session?.data || {}
+        if (!match || !picks?.length) {
+          await editMsg(chatId, messageId,
+            '⚠️ No tengo suficientes datos del partido para analizarlo.',
+            mainMenuKb()
+          )
+          return NextResponse.json({ ok: true })
+        }
+        if (!odds || odds < 1.01) {
+          await editMsg(chatId, messageId,
+            `🔍 <b>${match}</b> · <b>${picks.join(' + ')}</b>\n\n📊 No detecté la cuota. Escribe el número (ej: <code>2.10</code>):`,
+          )
+          await setSession(supabase, chatId, 'valor_odds', {
+            ...session!.data,
+            valorPick: picks.join(' + '),
+          })
+          return NextResponse.json({ ok: true })
+        }
+        const pick = picks.join(' + ')
+        const thinking = await sendMsgGetId(chatId, '🔍 Analizando tu apuesta...')
+        const analysis = await analyzeValueBet(match, comp || '', pick, odds)
+        if (thinking) await deleteMsg(chatId, thinking)
+        await clearSession(supabase, chatId)
+        if (!analysis) {
+          await sendMsg(chatId, '⚠️ No pude analizar este partido. Intenta de nuevo.', mainMenuKb())
+          return NextResponse.json({ ok: true })
+        }
+        const impliedProb = (1 / odds) * 100
+        const estProb = analysis.probability * 100
+        const edge = estProb - impliedProb
+        const ev = analysis.probability * (odds - 1) - (1 - analysis.probability)
+        const confEmoji: Record<string, string> = { alta: '🟢', media: '🟡', baja: '🔴' }
+        const conf = confEmoji[analysis.confidence] || '🟡'
+        const verdict = edge > 2
+          ? `✅ <b>Apuesta con valor</b> — puede merecer`
+          : `❌ <b>Sin valor claro</b> — la cuota no compensa`
+        await sendMsg(chatId,
+          `🔍 <b>Análisis de Valor</b>\n\n` +
+          `📋 ${match}\n` +
+          `🎯 ${pick}  ·  @${odds}\n` +
+          (comp ? `🏆 ${comp}\n` : '') +
+          `\nProb. implícita:  <b>${impliedProb.toFixed(1)}%</b>\n` +
+          `Prob. estimada:   <b>${estProb.toFixed(1)}%</b>  ${conf} confianza ${analysis.confidence}\n\n` +
+          `📈 Ventaja: <b>${edge >= 0 ? '+' : ''}${edge.toFixed(1)}%</b>\n` +
+          `💰 Valor esp.: <b>${(ev * 10) >= 0 ? '+' : ''}€${(ev * 10).toFixed(2)}</b> por cada €10\n\n` +
+          `${verdict}\n\n` +
+          `💬 <i>${analysis.reasoning}</i>`,
+          mainMenuKb()
+        )
+        return NextResponse.json({ ok: true })
+      }
+
       if (cbData === 'cancel') {
         await clearSession(supabase, chatId)
         await editMsg(chatId, messageId, '❌ Cancelado.', mainMenuKb())
@@ -1823,11 +1877,16 @@ export async function POST(request: NextRequest) {
       lines.push('\n¿Es correcto?')
 
       await sendMsg(chatId, lines.join('\n'), {
-        inline_keyboard: [[
-          { text: '✅ Sí, registrar', callback_data: 'cf' },
-          { text: '✏️ Editar', callback_data: 'photo_edit' },
-          { text: '❌ Cancelar', callback_data: 'cancel' },
-        ]],
+        inline_keyboard: [
+          [
+            { text: '✅ Sí, registrar', callback_data: 'cf' },
+            { text: '✏️ Editar', callback_data: 'photo_edit' },
+          ],
+          [
+            { text: '🔍 Analizar valor', callback_data: 'photo_valor' },
+            { text: '❌ Cancelar', callback_data: 'cancel' },
+          ],
+        ],
       })
       return NextResponse.json({ ok: true })
     }
