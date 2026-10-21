@@ -171,7 +171,7 @@ async function extractBetFromPhoto(fileId: string): Promise<ExtractedBet | null>
 
     // 3. Ask Gemini Vision to extract bet info
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '')
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
+    const model = genAI.getGenerativeModel({ model: 'gemini-3.8-flash' })
     const prompt = `Eres un asistente que extrae datos de tickets de apuestas deportivas.
 Analiza esta imagen y devuelve SOLO un JSON con estos campos (omite los que no puedas determinar):
 - bookmaker: casa de apuestas (Bet365, Winamax, William Hill, Bwin, Betfair u Otro)
@@ -192,9 +192,7 @@ Devuelve ÚNICAMENTE JSON válido, sin texto adicional.`
     const jsonMatch = text.match(/\{[\s\S]*\}/)
     if (!jsonMatch) return null
     return JSON.parse(jsonMatch[0]) as ExtractedBet
-  } catch (err) {
-    throw err
-  }
+  } catch { return null }
 }
 
 // ── Session ───────────────────────────────────────────────────────────────────
@@ -1654,15 +1652,7 @@ export async function POST(request: NextRequest) {
       const largest = photos[photos.length - 1]
 
       const thinking = await sendMsgGetId(chatId, '📸 Analizando tu apuesta...')
-      let extracted: ExtractedBet | null = null
-      try {
-        extracted = await extractBetFromPhoto(largest.file_id)
-      } catch (err) {
-        if (thinking) await deleteMsg(chatId, thinking)
-        const errMsg = err instanceof Error ? err.message : String(err)
-        await sendMsg(chatId, `🔴 Error técnico: ${errMsg}`, mainMenuKb())
-        return NextResponse.json({ ok: true })
-      }
+      const extracted = await extractBetFromPhoto(largest.file_id)
 
       if (!extracted || (!extracted.match && !extracted.picks?.length)) {
         if (thinking) await deleteMsg(chatId, thinking)
