@@ -192,7 +192,7 @@ Devuelve ÚNICAMENTE JSON válido, sin texto adicional.`
     const jsonMatch = text.match(/\{[\s\S]*\}/)
     if (!jsonMatch) return null
     return JSON.parse(jsonMatch[0]) as ExtractedBet
-  } catch { return null }
+  } catch (err) { throw err }
 }
 
 // ── Session ───────────────────────────────────────────────────────────────────
@@ -1652,7 +1652,15 @@ export async function POST(request: NextRequest) {
       const largest = photos[photos.length - 1]
 
       const thinking = await sendMsgGetId(chatId, '📸 Analizando tu apuesta...')
-      const extracted = await extractBetFromPhoto(largest.file_id)
+      let extracted: ExtractedBet | null = null
+      try {
+        extracted = await extractBetFromPhoto(largest.file_id)
+      } catch (err) {
+        if (thinking) await deleteMsg(chatId, thinking)
+        const errMsg = err instanceof Error ? err.message : String(err)
+        await sendMsg(chatId, `🔴 Error: ${errMsg}`, mainMenuKb())
+        return NextResponse.json({ ok: true })
+      }
 
       if (!extracted || (!extracted.match && !extracted.picks?.length)) {
         if (thinking) await deleteMsg(chatId, thinking)
