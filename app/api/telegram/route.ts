@@ -169,9 +169,9 @@ async function extractBetFromPhoto(fileId: string): Promise<ExtractedBet | null>
     const base64 = Buffer.from(imgBuffer).toString('base64')
     const mimeType = filePath.endsWith('.png') ? 'image/png' : 'image/jpeg'
 
-    // 3. Ask Gemini to extract bet info (free tier: 1500 req/day)
+    // 3. Ask Gemini Vision to extract bet info
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '')
-    const model = genAI.getGenerativeModel({ model: 'gemini-3.8-flash' })
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
     const prompt = `Eres un asistente que extrae datos de tickets de apuestas deportivas.
 Analiza esta imagen y devuelve SOLO un JSON con estos campos (omite los que no puedas determinar):
 - bookmaker: casa de apuestas (Bet365, Winamax, William Hill, Bwin, Betfair u Otro)
