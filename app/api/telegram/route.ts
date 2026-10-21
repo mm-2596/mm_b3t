@@ -228,9 +228,9 @@ async function extractBetFromPhoto(fileId: string): Promise<ExtractedBet | null>
     const base64 = Buffer.from(imgBuffer).toString('base64')
     const mimeType = filePath.endsWith('.png') ? 'image/png' : 'image/jpeg'
 
-    // 3. Ask Gemini to extract bet info (free tier: 1500 req/day)
+    // 3. Ask Gemini to extract bet info — use vision-capable model
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '')
-    const model = genAI.getGenerativeModel({ model: 'gemini-3.8-flash' })
+    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
     const prompt = `Eres un asistente experto en apuestas deportivas. Analiza esta imagen.
 Puede ser un ticket ya realizado, un resguardo, o una selección/apuesta que el usuario está a punto de hacer en una app de apuestas (Bet365, Winamax, Bwin, etc.).
 Extrae todos los datos visibles y devuelve SOLO un JSON con estos campos (omite los que no puedas determinar):
