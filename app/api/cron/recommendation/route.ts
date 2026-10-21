@@ -73,11 +73,27 @@ interface ValueRecommendation {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-async function sendMsg(chatId: string, text: string) {
+function mainMenuKb() {
+  return {
+    inline_keyboard: [
+      [{ text: '➕ Nueva apuesta', callback_data: 'menu:nueva' }, { text: '⏳ Pendientes', callback_data: 'menu:pendientes' }],
+      [{ text: '📊 Resumen hoy', callback_data: 'menu:resumen' }, { text: '📅 Historial', callback_data: 'menu:historial' }],
+      [{ text: '🛠️ Gestionar', callback_data: 'menu:gestionar' }, { text: '🔔 Últimas 5', callback_data: 'menu:ultimas' }],
+      [{ text: '🔍 Analizar valor', callback_data: 'menu:valor' }],
+    ],
+  }
+}
+
+async function sendMsg(chatId: string, text: string, withMenu = false) {
   await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML' }),
+    body: JSON.stringify({
+      chat_id: chatId,
+      text,
+      parse_mode: 'HTML',
+      ...(withMenu ? { reply_markup: mainMenuKb() } : {}),
+    }),
   })
 }
 
@@ -261,7 +277,8 @@ export async function GET(request: NextRequest) {
     if (!hasAI && !hasValue) {
       await sendMsg(chatId,
         `🌅 <b>Recomendación del día — ${dateLabel}</b>\n\n` +
-        `⚠️ No encontré picks con suficiente valor hoy. Día de descanso 💤`
+        `⚠️ No encontré picks con suficiente valor hoy. Día de descanso 💤`,
+        true
       )
       continue
     }
@@ -324,7 +341,7 @@ export async function GET(request: NextRequest) {
 
     lines.push(`\n⚠️ <i>Apuesta responsable — máx. 1-2 unidades</i>`)
 
-    await sendMsg(chatId, lines.join('\n'))
+    await sendMsg(chatId, lines.join('\n'), true)
   }
 
   return NextResponse.json({
