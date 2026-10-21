@@ -124,7 +124,7 @@ async function fetchOddsApiMatches(todayStr: string): Promise<OddsMatch[]> {
     ODDS_SPORTS.map(async (sport) => {
       try {
         const res = await fetch(
-          `https://api.the-odds-api.com/v4/sports/${sport}/odds/?apiKey=${key}&regions=eu&markets=h2h&bookmakers=bet365,winamax`,
+          `https://api.the-odds-api.com/v4/sports/${sport}/odds/?apiKey=${key}&regions=eu&markets=h2h&bookmakers=bet365,unibet,bwin`,
           { cache: 'no-store' }
         )
         if (!res.ok) return
