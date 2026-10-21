@@ -316,7 +316,7 @@ export async function GET(request: NextRequest) {
 
     // ── Sección 2: Cuotas reales ──
     lines.push(`\n━━━━━━━━━━━━━━━━━━`)
-    lines.push(`📊 <b>MEJOR VALOR REAL</b>`)
+    lines.push(`📊 <b>RECOMENDACIÓN THE ODDS API</b>`)
     lines.push(`━━━━━━━━━━━━━━━━━━`)
 
     if (!hasOddsApi) {

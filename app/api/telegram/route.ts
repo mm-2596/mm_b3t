@@ -65,6 +65,7 @@ async function answerCQ(id: string) {
 
 // ── Football API (ESPN — free, no key) ───────────────────────────────────────
 interface Fixture { home: string; away: string; time: string; id?: string }
+interface OddsGame { home: string; away: string; homeOdds: number | null; drawOdds: number | null; awayOdds: number | null }
 
 const LEAGUE_MAP: Record<string, string> = {
   'Liga EA Sports':   'esp.1',
@@ -144,6 +145,64 @@ async function fetchLineup(leagueSlug: string, eventId: string): Promise<LineupT
   } catch { return [] }
 }
 
+// ── The Odds API (real odds for value analysis) ───────────────────────────────
+const ODDS_SPORT_MAP: Record<string, string> = {
+  'Liga EA Sports':   'soccer_spain_la_liga',
+  'Premier League':   'soccer_epl',
+  'Serie A':          'soccer_italy_serie_a',
+  'Bundesliga':       'soccer_germany_bundesliga',
+  'Champions League': 'soccer_uefa_champs_league',
+  'Copa del Rey':     'soccer_spain_copa_del_rey',
+  'Nations League':   'soccer_uefa_nations_league',
+}
+
+function normalizeTeam(name: string): string {
+  return name.toLowerCase().replace(/[^a-z0-9]/g, ' ').replace(/\s+/g, ' ').trim()
+}
+
+function teamNamesMatch(a: string, b: string): boolean {
+  const na = normalizeTeam(a), nb = normalizeTeam(b)
+  if (na === nb) return true
+  const aWords = na.split(' ').filter(w => w.length > 3)
+  const bWords = nb.split(' ').filter(w => w.length > 3)
+  return aWords.some(w => nb.includes(w)) || bWords.some(w => na.includes(w))
+}
+
+async function fetchOddsForCompetition(comp: string, todayStr: string): Promise<OddsGame[]> {
+  const key = process.env.ODDS_API_KEY
+  const sportKey = ODDS_SPORT_MAP[comp]
+  if (!key || !sportKey) return []
+  try {
+    const res = await fetch(
+      `https://api.the-odds-api.com/v4/sports/${sportKey}/odds/?apiKey=${key}&regions=eu&markets=h2h&bookmakers=bet365,unibet,bwin`,
+      { cache: 'no-store' }
+    )
+    if (!res.ok) return []
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const data: any[] = await res.json()
+    if (!Array.isArray(data)) return []
+    return data
+      .filter(m => m.commence_time?.startsWith(todayStr))
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .map(m => {
+        let homeOdds: number | null = null, drawOdds: number | null = null, awayOdds: number | null = null
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        for (const bm of (m.bookmakers || [])) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const h2h = bm.markets?.find((mk: any) => mk.key === 'h2h')
+          if (!h2h) continue
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          for (const o of (h2h.outcomes || [])) {
+            if (o.name === m.home_team && (!homeOdds || o.price > homeOdds)) homeOdds = o.price
+            if (o.name === 'Draw' && (!drawOdds || o.price > drawOdds)) drawOdds = o.price
+            if (o.name === m.away_team && (!awayOdds || o.price > awayOdds)) awayOdds = o.price
+          }
+        }
+        return { home: m.home_team, away: m.away_team, homeOdds, drawOdds, awayOdds }
+      })
+  } catch { return [] }
+}
+
 // ── Photo → AI bet extraction ─────────────────────────────────────────────────
 interface ExtractedBet {
   bookmaker?: string
@@ -220,6 +279,8 @@ interface SessionData {
   selectedBetIds?: string[]
   photoExtracted?: boolean
   valorPick?: string
+  fixtureOddsMap?: Record<string, {h?: number; d?: number; a?: number}>
+  valorOdds?: Record<string, number>
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1301,15 +1362,35 @@ export async function POST(request: NextRequest) {
       if (cbData.startsWith('vcomp:')) {
         const comp = cbData.slice(6)
         const leagueSlug = LEAGUE_MAP[comp] || ''
-        const fixtures = await fetchTodayFixtures(comp)
+        const todayStr = new Date().toISOString().split('T')[0]
+        const [fixtures, oddsGames] = await Promise.all([
+          fetchTodayFixtures(comp),
+          fetchOddsForCompetition(comp, todayStr),
+        ])
+        // Map each ESPN fixture to its Odds API odds
+        const fixtureOddsMap: Record<string, {h?: number; d?: number; a?: number}> = {}
+        for (let i = 0; i < fixtures.length; i++) {
+          const f = fixtures[i]
+          const match = oddsGames.find(g =>
+            teamNamesMatch(f.home, g.home) && teamNamesMatch(f.away, g.away)
+          )
+          if (match?.homeOdds) {
+            fixtureOddsMap[String(i)] = {
+              ...(match.homeOdds ? { h: match.homeOdds } : {}),
+              ...(match.drawOdds ? { d: match.drawOdds } : {}),
+              ...(match.awayOdds ? { a: match.awayOdds } : {}),
+            }
+          }
+        }
+        const hasRealOdds = Object.keys(fixtureOddsMap).length > 0
         if (fixtures.length > 0) {
-          await setSession(supabase, chatId, 'valor_match', { comp, leagueSlug, fixtures })
+          await setSession(supabase, chatId, 'valor_match', { comp, leagueSlug, fixtures, fixtureOddsMap })
           await editMsg(chatId, messageId,
-            `🔍 <b>${comp}</b>\n\n⚽ Elige el partido:`,
+            `🔍 <b>${comp}</b>\n\n⚽ Elige el partido:${hasRealOdds ? '\n<i>💰 Cuotas reales disponibles</i>' : ''}`,
             valorFixturesKb(fixtures)
           )
         } else {
-          await setSession(supabase, chatId, 'valor_match', { comp, leagueSlug, fixtures: [] })
+          await setSession(supabase, chatId, 'valor_match', { comp, leagueSlug, fixtures: [], fixtureOddsMap: {} })
           await editMsg(chatId, messageId,
             `🔍 <b>${comp}</b>\n\n⚠️ Sin partidos hoy. Escribe el partido (ej: <code>PSG vs Barcelona</code>):`
           )
@@ -1323,9 +1404,20 @@ export async function POST(request: NextRequest) {
         const f = session?.data.fixtures?.[idx]
         if (!f) return NextResponse.json({ ok: true })
         const match = `${f.home} vs ${f.away}`
-        await setSession(supabase, chatId, 'valor_pick', { ...session!.data, match, fixtures: undefined })
+        const oddsEntry = session?.data.fixtureOddsMap?.[String(idx)]
+        const valorOdds: Record<string, number> = {}
+        if (oddsEntry?.h) valorOdds['1'] = oddsEntry.h
+        if (oddsEntry?.d) valorOdds['X'] = oddsEntry.d
+        if (oddsEntry?.a) valorOdds['2'] = oddsEntry.a
+        await setSession(supabase, chatId, 'valor_pick', {
+          ...session!.data, match, fixtures: undefined, fixtureOddsMap: undefined,
+          ...(Object.keys(valorOdds).length ? { valorOdds } : {}),
+        })
+        const oddsLine = Object.keys(valorOdds).length
+          ? `\n\n💰 Cuotas reales: 1→<b>${valorOdds['1'] ?? '?'}</b>  X→<b>${valorOdds['X'] ?? '?'}</b>  2→<b>${valorOdds['2'] ?? '?'}</b>`
+          : ''
         await editMsg(chatId, messageId,
-          `🔍 <b>${session!.data.comp}</b> · <b>${match}</b>\n\n¿Qué pick quieres analizar?`,
+          `🔍 <b>${session!.data.comp}</b> · <b>${match}</b>${oddsLine}\n\n¿Qué pick quieres analizar?`,
           valorPicksKb()
         )
         return NextResponse.json({ ok: true })
@@ -1335,6 +1427,43 @@ export async function POST(request: NextRequest) {
         const pick = cbData.slice(4).replace('_', ' ')
         const session = await getSession(supabase, chatId)
         if (!session?.data.match) return NextResponse.json({ ok: true })
+        const realOdds = session.data.valorOdds?.[pick]
+        if (realOdds) {
+          // Analyze directly with real odds — skip manual entry
+          const { match, comp } = session.data
+          const thinking = await sendMsgGetId(chatId, '🔍 Analizando con cuotas reales...')
+          const analysis = await analyzeValueBet(match!, comp!, pick, realOdds)
+          if (thinking) await deleteMsg(chatId, thinking)
+          await clearSession(supabase, chatId)
+          if (!analysis) {
+            await sendMsg(chatId, '⚠️ No pude analizar este partido. Intenta con otro.', mainMenuKb())
+            return NextResponse.json({ ok: true })
+          }
+          const impliedProb = (1 / realOdds) * 100
+          const estProb = analysis.probability * 100
+          const edge = estProb - impliedProb
+          const ev = analysis.probability * (realOdds - 1) - (1 - analysis.probability)
+          const confEmoji: Record<string, string> = { alta: '🟢', media: '🟡', baja: '🔴' }
+          const conf = confEmoji[analysis.confidence] || '🟡'
+          const verdict = edge > 2
+            ? `✅ <b>Apuesta con valor</b> — puede merecer`
+            : `❌ <b>Sin valor claro</b> — la cuota no compensa`
+          await sendMsg(chatId,
+            `🔍 <b>Análisis de Valor</b> <i>(cuota real 💰)</i>\n\n` +
+            `📋 ${match}\n` +
+            `🎯 ${pick}  ·  @${realOdds}\n` +
+            `🏆 ${comp}\n\n` +
+            `Prob. implícita:  <b>${impliedProb.toFixed(1)}%</b>\n` +
+            `Prob. estimada:   <b>${estProb.toFixed(1)}%</b>  ${conf} confianza ${analysis.confidence}\n\n` +
+            `📈 Ventaja: <b>${edge >= 0 ? '+' : ''}${edge.toFixed(1)}%</b>\n` +
+            `💰 Valor esp.: <b>${(ev * 10) >= 0 ? '+' : ''}€${(ev * 10).toFixed(2)}</b> por cada €10\n\n` +
+            `${verdict}\n\n` +
+            `💬 <i>${analysis.reasoning}</i>`,
+            mainMenuKb()
+          )
+          return NextResponse.json({ ok: true })
+        }
+        // No real odds — ask user to type them
         await setSession(supabase, chatId, 'valor_odds', { ...session.data, valorPick: pick })
         await editMsg(chatId, messageId,
           `🔍 <b>${session.data.match}</b> · <b>${pick}</b>\n\n📊 ¿Cuál es la <b>cuota</b> que te ofrecen?\n\nEscribe el número (ej: <code>2.10</code>):`
