@@ -47,22 +47,13 @@ export default function BankrollPage() {
 
   const currentBankroll = netBankroll + totalBettingProfit
 
-  // Build chronological bankroll evolution data
+  // Build chronological P&L evolution (bets only, not affected by withdrawals/deposits)
   const chartData = useMemo(() => {
-    const events: { date: string; delta: number }[] = [
-      ...transactions.map(tx => ({
-        date: tx.date,
-        delta: tx.type === 'deposit' ? tx.amount : -tx.amount,
-      })),
-      ...bets
-        .filter(b => b.status !== 'pending')
-        .map(b => ({ date: b.date, delta: calcProfit(b) })),
-    ]
-    if (events.length === 0) return []
-    // Group deltas by day
+    const settledBets = bets.filter(b => b.status !== 'pending')
+    if (settledBets.length === 0) return []
     const byDay = new Map<string, number>()
-    for (const e of events) {
-      byDay.set(e.date, (byDay.get(e.date) ?? 0) + e.delta)
+    for (const b of settledBets) {
+      byDay.set(b.date, (byDay.get(b.date) ?? 0) + calcProfit(b))
     }
     let running = 0
     return Array.from(byDay.entries())
@@ -71,7 +62,7 @@ export default function BankrollPage() {
         running += delta
         return { date, bankroll: parseFloat(running.toFixed(2)) }
       })
-  }, [transactions, bets])
+  }, [bets])
 
   const set = (key: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     setForm(prev => ({ ...prev, [key]: e.target.value }))
@@ -145,7 +136,7 @@ export default function BankrollPage() {
       {/* Bankroll Evolution Chart */}
       {chartData.length >= 2 && (
         <div className="rounded-xl border border-gray-700/50 bg-gray-800/50 p-5">
-          <h2 className="text-sm font-semibold text-gray-100 mb-4">Evolución del Bankroll</h2>
+          <h2 className="text-sm font-semibold text-gray-100 mb-4">Evolución P&L (apuestas)</h2>
           <ResponsiveContainer width="100%" height={200}>
             <AreaChart data={chartData} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
               <defs>
