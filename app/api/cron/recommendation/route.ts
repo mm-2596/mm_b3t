@@ -15,8 +15,10 @@ const LEAGUES: Array<{ name: string; slug: string }> = [
   { name: 'Champions League', slug: 'uefa.champions' },
   { name: 'Serie A',          slug: 'ita.1' },
   { name: 'Bundesliga',       slug: 'ger.1' },
-  { name: 'Copa del Rey',     slug: 'esp.copa_del_rey' },
-  { name: 'Nations League',   slug: 'uefa.nations' },
+  { name: 'Copa del Rey',       slug: 'esp.copa_del_rey' },
+  { name: 'Nations League',     slug: 'uefa.nations' },
+  { name: 'Europa League',      slug: 'uefa.europa' },
+  { name: 'Conference League',  slug: 'uefa.europa.conf' },
 ]
 
 // ─── The Odds API sports keys ─────────────────────────────────────────────────
@@ -29,6 +31,8 @@ const ODDS_SPORTS = [
   'soccer_germany_bundesliga',
   'soccer_spain_copa_del_rey',
   'soccer_uefa_nations_league',
+  'soccer_uefa_europa_league',
+  'soccer_uefa_europa_conference_league',
 ]
 
 // ─── Types ────────────────────────────────────────────────────────────────────
