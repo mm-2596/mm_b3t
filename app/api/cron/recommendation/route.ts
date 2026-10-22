@@ -158,23 +158,125 @@ async function fetchOddsApiMatches(todayStr: string): Promise<OddsMatch[]> {
   return allMatches
 }
 
+// ─── Football-Data.org: form enrichment ──────────────────────────────────────
+
+const FD_COMPETITIONS = ['PD', 'PL', 'CL', 'SA', 'BL1', 'FL1', 'DED']
+const FD_COMP_NAMES: Record<string, string> = {
+  PD: 'Liga EA Sports', PL: 'Premier League', CL: 'Champions League',
+  SA: 'Serie A', BL1: 'Bundesliga', FL1: 'Ligue 1', DED: 'Eredivisie',
+}
+
+interface EnrichedMatch extends Match {
+  homeForm?: string
+  awayForm?: string
+  homeId?: number
+  awayId?: number
+}
+
+async function fetchTeamForm(teamId: number, fdKey: string): Promise<string> {
+  try {
+    const res = await fetch(
+      `https://api.football-data.org/v4/teams/${teamId}/matches?status=FINISHED&limit=5`,
+      { headers: { 'X-Auth-Token': fdKey }, cache: 'no-store' }
+    )
+    if (!res.ok) return ''
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const data: any = await res.json()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const matches: any[] = data.matches || []
+    if (!matches.length) return ''
+    let goals = 0
+    const results = matches.map(m => {
+      const isHome = m.homeTeam.id === teamId
+      const scored = isHome ? m.score.fullTime.home : m.score.fullTime.away
+      const conceded = isHome ? m.score.fullTime.away : m.score.fullTime.home
+      goals += scored ?? 0
+      if (scored == null || conceded == null) return '?'
+      if (scored > conceded) return 'V'
+      if (scored < conceded) return 'D'
+      return 'E'
+    }).reverse()
+    const avg = (goals / matches.length).toFixed(1)
+    return `${results.join('-')} (${avg}gls/p)`
+  } catch { return '' }
+}
+
+async function fetchEnrichedMatches(dateStr: string): Promise<EnrichedMatch[]> {
+  const fdKey = process.env.FOOTBALL_DATA_API_KEY
+  if (!fdKey) return []
+
+  const allMatches: EnrichedMatch[] = []
+
+  await Promise.all(FD_COMPETITIONS.map(async (comp) => {
+    try {
+      const res = await fetch(
+        `https://api.football-data.org/v4/competitions/${comp}/matches?dateFrom=${dateStr}&dateTo=${dateStr}`,
+        { headers: { 'X-Auth-Token': fdKey }, cache: 'no-store' }
+      )
+      if (!res.ok) return
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const data: any = await res.json()
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      for (const m of (data.matches || []) as any[]) {
+        allMatches.push({
+          home: m.homeTeam.shortName || m.homeTeam.name,
+          away: m.awayTeam.shortName || m.awayTeam.name,
+          time: new Date(m.utcDate).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Madrid' }),
+          league: FD_COMP_NAMES[comp] || comp,
+          homeId: m.homeTeam.id,
+          awayId: m.awayTeam.id,
+        })
+      }
+    } catch { /* skip */ }
+  }))
+
+  // Fetch form for each team in parallel (max 8 matches to stay within rate limits)
+  const toEnrich = allMatches.slice(0, 8)
+  await Promise.all(toEnrich.map(async (m) => {
+    const [hf, af] = await Promise.all([
+      m.homeId ? fetchTeamForm(m.homeId, fdKey) : Promise.resolve(''),
+      m.awayId ? fetchTeamForm(m.awayId, fdKey) : Promise.resolve(''),
+    ])
+    m.homeForm = hf
+    m.awayForm = af
+  }))
+
+  return allMatches
+}
+
 // ─── Gemini: AI-only recommendation ──────────────────────────────────────────
 
-async function getAIRecommendation(matches: Match[], date: string): Promise<Recommendation | null> {
+async function getAIRecommendation(espnMatches: Match[], enrichedMatches: EnrichedMatch[], date: string): Promise<Recommendation | null> {
   const key = process.env.GEMINI_API_KEY
-  if (!key || !matches.length) return null
+  if (!key) return null
 
-  const list = matches.map(m =>
+  // Build match list: enriched matches first (with form), then ESPN-only matches
+  const enrichedNames = new Set(enrichedMatches.map(m => `${m.home}${m.away}`))
+  const espnOnly = espnMatches.filter(m => !enrichedNames.has(`${m.home}${m.away}`))
+
+  const enrichedList = enrichedMatches.map(m => {
+    let line = `- ${m.league}: ${m.home} vs ${m.away} (${m.time})`
+    if (m.homeForm || m.awayForm) {
+      line += `\n  Forma: ${m.home} [${m.homeForm || 'N/D'}] | ${m.away} [${m.awayForm || 'N/D'}]`
+    }
+    return line
+  }).join('\n')
+
+  const espnList = espnOnly.map(m =>
     `- ${m.league}: ${m.home} vs ${m.away} (${m.time})`
   ).join('\n')
 
+  const allList = [enrichedList, espnList].filter(Boolean).join('\n')
+  if (!allList) return null
+
   const prompt =
     `Eres un analista experto en apuestas de fútbol. Hoy es ${date}.\n\n` +
-    `Partidos disponibles:\n${list}\n\n` +
+    `Partidos disponibles (los que tienen "Forma" incluyen últimos 5 resultados reales V=Victoria E=Empate D=Derrota):\n${allList}\n\n` +
     `Tarea: analiza estos partidos y elige UN solo pick con el mayor valor esperado.\n` +
     `Requisitos:\n` +
     `- Cuota mínima 1.75 (en Winamax o Bet365)\n` +
     `- Elige entre: resultado (1/X/2), goles (+/-2.5, +/-1.5), o BTTS Sí/No\n` +
+    `- Prioriza partidos con datos de forma real cuando estén disponibles\n` +
     `- Prioriza picks con alta confianza y ventaja real sobre la prob. implícita\n\n` +
     `Responde SOLO con JSON válido:\n` +
     `{"match":"Team A vs Team B","competition":"Liga EA Sports","pick":"1","pick_label":"Team A gana","odds_min":1.85,"probability":0.62,"confidence":"alta|media|baja","reasoning":"máx 20 palabras"}`
@@ -260,14 +362,15 @@ export async function GET(request: NextRequest) {
   })
 
   // Fetch all data in parallel
-  const [espnMatches, oddsMatches] = await Promise.all([
+  const [espnMatches, oddsMatches, enrichedMatches] = await Promise.all([
     Promise.all(LEAGUES.map(l => fetchLeagueMatches(l.slug, l.name, dateISO8601))).then(r => r.flat()),
     fetchOddsApiMatches(dateStr),
+    fetchEnrichedMatches(dateStr),
   ])
 
   // Run both analyses in parallel
   const [aiRec, valueRec] = await Promise.all([
-    getAIRecommendation(espnMatches, dateStr),
+    getAIRecommendation(espnMatches, enrichedMatches, dateStr),
     getValueFromOdds(oddsMatches),
   ])
 
@@ -351,6 +454,7 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({
     ok: true,
     espn_matches: espnMatches.length,
+    enriched_matches: enrichedMatches.length,
     odds_matches: oddsMatches.length,
     ai_recommendation: aiRec?.match || null,
     value_recommendation: valueRec?.match || null,
