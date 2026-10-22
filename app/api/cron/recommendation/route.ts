@@ -405,6 +405,10 @@ export async function GET(request: NextRequest) {
       const estProb = aiRec.probability * 100
       const edge = estProb - impliedProb
       const conf = confEmoji[aiRec.confidence] || '🟡'
+      const hasRealData = enrichedMatches.length > 0
+      const dataTag = hasRealData
+        ? `📊 <i>Análisis con datos reales de forma</i>`
+        : `⚠️ <i>Sin datos reales hoy (Europa/Conference League) — fiabilidad reducida</i>`
 
       lines.push(
         `📋 <b>${aiRec.match}</b>`,
@@ -416,6 +420,7 @@ export async function GET(request: NextRequest) {
         `Prob. implícita: ${impliedProb.toFixed(1)}%`,
         `📈 Ventaja estimada: <b>${edge >= 0 ? '+' : ''}${edge.toFixed(1)}%</b>`,
         `💬 <i>${aiRec.reasoning}</i>`,
+        dataTag,
       )
     } else {
       lines.push(`⚠️ Sin recomendación IA hoy`)
