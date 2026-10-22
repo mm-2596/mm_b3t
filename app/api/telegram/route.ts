@@ -736,6 +736,26 @@ async function getUserSettings(supabase: any, userId: string) {
   return data
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function formatPendingByBookmaker(bets: any[]): string {
+  const grouped: Record<string, typeof bets> = {}
+  for (const b of bets) {
+    const bk = b.bookmaker || 'Otro'
+    if (!grouped[bk]) grouped[bk] = []
+    grouped[bk].push(b)
+  }
+  const total = bets.length
+  const lines: string[] = [`⏳ <b>Pendientes (${total}):</b>`]
+  for (const [bk, group] of Object.entries(grouped)) {
+    lines.push(`\n🏠 <b>${bk}</b> (${group.length})`)
+    for (const b of group) {
+      const name = b.match && b.match !== 'Apuesta' ? b.match : `${b.pick} @ ${b.odds}`
+      lines.push(`• <b>${name}</b> | €${b.stake}`)
+    }
+  }
+  return lines.join('\n')
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
@@ -1482,16 +1502,11 @@ export async function POST(request: NextRequest) {
       if (cbData === 'menu:pendientes') {
         const { data: bets } = await supabase
           .from('bets').select('*').eq('user_id', userId).eq('status', 'pending')
-          .order('created_at', { ascending: false }).limit(8)
+          .order('created_at', { ascending: false }).limit(20)
         if (!bets?.length) {
           await editMsg(chatId, messageId, '✅ No tienes apuestas pendientes.', mainMenuKb())
         } else {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const list = bets.map((b: any, i: number) => {
-            const name = b.match !== 'Apuesta' ? b.match : `${b.pick} @ ${b.odds}`
-            return `${i + 1}. <b>${name}</b> — ${b.bookmaker} | €${b.stake}`
-          }).join('\n')
-          await editMsg(chatId, messageId, `⏳ <b>Pendientes:</b>\n\n${list}`, mainMenuKb())
+          await editMsg(chatId, messageId, formatPendingByBookmaker(bets), mainMenuKb())
         }
         return NextResponse.json({ ok: true })
       }
@@ -1590,15 +1605,11 @@ export async function POST(request: NextRequest) {
     if (textLower.startsWith('/pendientes')) {
       const { data: bets } = await supabase
         .from('bets').select('*').eq('user_id', userId).eq('status', 'pending')
-        .order('created_at', { ascending: false }).limit(5)
+        .order('created_at', { ascending: false }).limit(20)
       if (!bets?.length) {
         await sendMsg(chatId, '✅ No tienes apuestas pendientes.', mainMenuKb())
       } else {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const list = bets.map((b: any, i: number) =>
-          `${i + 1}. <b>${b.match}</b> — ${b.pick} @ ${b.odds} | €${b.stake} (${b.units}u) — ${b.bookmaker}`
-        ).join('\n\n')
-        await sendMsg(chatId, `📋 <b>Pendientes:</b>\n\n${list}`, mainMenuKb())
+        await sendMsg(chatId, formatPendingByBookmaker(bets), mainMenuKb())
       }
       return NextResponse.json({ ok: true })
     }
