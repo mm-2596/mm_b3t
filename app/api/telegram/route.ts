@@ -171,7 +171,7 @@ async function extractBetFromPhoto(fileId: string): Promise<ExtractedBet | null>
 
     // 3. Ask Gemini Vision to extract bet info
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '')
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' })
+    const model = genAI.getGenerativeModel({ model: 'gemini-3.8-flash' })
     const prompt = `Eres un asistente que extrae datos de tickets de apuestas deportivas.
 Analiza esta imagen y devuelve SOLO un JSON con estos campos (omite los que no puedas determinar):
 - bookmaker: casa de apuestas (Bet365, Winamax, William Hill, Bwin, Betfair u Otro)
@@ -566,7 +566,7 @@ async function analyzeValueBet(match: string, comp: string, pick: string, odds: 
     `{"probability":0.XX,"confidence":"alta|media|baja","reasoning":"máx 15 palabras"}`
   try {
     const genAI = new GoogleGenerativeAI(key)
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' })
+    const model = genAI.getGenerativeModel({ model: 'gemini-3.8-flash' })
     const result = await model.generateContent(prompt)
     const text = result.response.text().trim()
     const jsonMatch = text.match(/\{[^}]+\}/)
