@@ -380,11 +380,11 @@ function multiSettleKb(bets: any[], selectedIds: string[], status: string) {
   const statusLabel: Record<string, string> = { won: '✅ Ganada', lost: '❌ Perdida', void: '↩️ Anulada', cashout: '💸 Cashout' }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const rows = bets.map((b: any) => {
-    const match = b.match && b.match !== 'Apuesta' ? b.match : 'Apuesta'
-    const pick = b.pick ? ` · ${b.pick}` : ''
-    const odds = b.odds ? ` @${b.odds}` : ''
-    const stake = b.stake ? ` €${b.stake}` : ''
-    const label = `${match}${pick}${odds}${stake}`
+    const bk = b.bookmaker ? `${b.bookmaker} ` : ''
+    const stake = b.stake ? `€${b.stake} ` : ''
+    const odds = b.odds ? `@${b.odds} ` : ''
+    const pick = b.pick ? `· ${b.pick}` : (b.match && b.match !== 'Apuesta' ? `· ${b.match}` : '')
+    const label = `${bk}${stake}${odds}${pick}`
     const short = label.length > 40 ? label.slice(0, 39) + '…' : label
     const sel = selectedIds.includes(b.id)
     return [{ text: `${sel ? '✅' : '◻️'} ${short}`, callback_data: `ms:${b.id}` }]
