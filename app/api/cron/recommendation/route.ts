@@ -346,6 +346,71 @@ async function getValueFromOdds(matches: OddsMatch[]): Promise<ValueRecommendati
   } catch { return null }
 }
 
+// ─── Gemini: La Liga specific recommendation ──────────────────────────────────
+
+async function getLaLigaRecommendation(
+  enrichedMatches: EnrichedMatch[],
+  oddsMatches: OddsMatch[],
+): Promise<ValueRecommendation | null> {
+  const key = process.env.GEMINI_API_KEY
+  if (!key) return null
+
+  // Filter La Liga matches from enriched (form data) and odds
+  const laLigaEnriched = enrichedMatches.filter(m => m.league === 'Liga EA Sports')
+  const laLigaOdds = oddsMatches.filter(m => m.sport_key === 'soccer_spain_la_liga')
+
+  if (!laLigaEnriched.length && !laLigaOdds.length) return null
+
+  // Build form lines
+  const formLines = laLigaEnriched.map(m => {
+    let line = `${m.home} vs ${m.away} (${m.time})`
+    if (m.homeForm || m.awayForm) {
+      line += `\n  Forma: ${m.home} [${m.homeForm || 'N/D'}] | ${m.away} [${m.awayForm || 'N/D'}]`
+    }
+    return line
+  }).join('\n')
+
+  // Build odds lines
+  const oddsLines = laLigaOdds.map(m => {
+    const best: Record<string, { price: number; bm: string }> = {}
+    for (const bm of m.bookmakers) {
+      const h2h = bm.markets.find(mk => mk.key === 'h2h')
+      if (!h2h) continue
+      for (const out of h2h.outcomes) {
+        if (!best[out.name] || out.price > best[out.name].price)
+          best[out.name] = { price: out.price, bm: bm.title }
+      }
+    }
+    const h = best[m.home_team], d = best['Draw'], a = best[m.away_team]
+    return `${m.home_team} vs ${m.away_team}: 1=${h ? `${h.price}(${h.bm})` : 'N/A'} X=${d ? `${d.price}(${d.bm})` : 'N/A'} 2=${a ? `${a.price}(${a.bm})` : 'N/A'}`
+  }).join('\n')
+
+  if (!formLines && !oddsLines) return null
+
+  const prompt =
+    `Eres un analista experto en La Liga EA Sports española.\n\n` +
+    (formLines ? `Partidos de hoy con forma reciente (V=Victoria E=Empate D=Derrota):\n${formLines}\n\n` : '') +
+    (oddsLines ? `Cuotas reales disponibles:\n${oddsLines}\n\n` : '') +
+    `Tarea: elige el pick con MAYOR valor esperado de La Liga de hoy.\n` +
+    `Requisitos: cuota ≥ 1.75, solo picks con ventaja real. Usa la forma reciente y las cuotas para fundamentar.\n\n` +
+    `Responde SOLO con JSON válido:\n` +
+    `{"match":"Team A vs Team B","pick":"1","pick_label":"Team A gana","real_odds":2.10,"bookmaker":"Bet365","estimated_prob":0.58,"implied_prob":0.476,"edge":0.104,"confidence":"alta|media|baja","reasoning":"máx 20 palabras"}`
+
+  try {
+    const genAI = new GoogleGenerativeAI(key)
+    const model = genAI.getGenerativeModel({ model: 'gemini-3.8-flash' })
+    const result = await model.generateContent(prompt)
+    const text = result.response.text().trim()
+    const jsonMatch = text.match(/\{[\s\S]*?\}/)
+    if (!jsonMatch) return null
+    const parsed = JSON.parse(jsonMatch[0])
+    if (!parsed.match || !parsed.pick || !parsed.real_odds) return null
+    const impliedProb = parsed.implied_prob ?? 1 / parsed.real_odds
+    const edge = parsed.edge ?? parsed.estimated_prob - impliedProb
+    return { ...parsed, implied_prob: impliedProb, edge }
+  } catch { return null }
+}
+
 // ─── Main handler ─────────────────────────────────────────────────────────────
 
 export async function GET(request: NextRequest) {
@@ -368,10 +433,11 @@ export async function GET(request: NextRequest) {
     fetchEnrichedMatches(dateStr),
   ])
 
-  // Run both analyses in parallel
-  const [aiRec, valueRec] = await Promise.all([
+  // Run all analyses in parallel
+  const [aiRec, valueRec, laLigaRec] = await Promise.all([
     getAIRecommendation(espnMatches, enrichedMatches, dateStr),
     getValueFromOdds(oddsMatches),
+    getLaLigaRecommendation(enrichedMatches, oddsMatches),
   ])
 
   const confEmoji: Record<string, string> = { alta: '🟢', media: '🟡', baja: '🔴' }
@@ -449,6 +515,26 @@ export async function GET(request: NextRequest) {
       )
     } else {
       lines.push(`⚠️ Sin picks de valor con cuotas reales hoy`)
+    }
+
+    // ── Sección 3: La Liga específica (solo si hay partidos) ──
+    if (laLigaRec) {
+      const conf = confEmoji[laLigaRec.confidence] || '🟡'
+      const edgeSign = laLigaRec.edge >= 0 ? '+' : ''
+      lines.push(`\n━━━━━━━━━━━━━━━━━━`)
+      lines.push(`🇪🇸 <b>PICK LA LIGA EA SPORTS</b>`)
+      lines.push(`━━━━━━━━━━━━━━━━━━`)
+      lines.push(
+        `📋 <b>${laLigaRec.match}</b>`,
+        `🎯 <b>${laLigaRec.pick_label}</b> (${laLigaRec.pick})`,
+        ``,
+        `Cuota real: <b>@${laLigaRec.real_odds}</b> — ${laLigaRec.bookmaker}`,
+        `Prob. implícita: ${(laLigaRec.implied_prob * 100).toFixed(1)}%`,
+        `Prob. estimada IA: <b>${(laLigaRec.estimated_prob * 100).toFixed(0)}%</b>  ${conf} ${laLigaRec.confidence}`,
+        `📈 Ventaja real: <b>${edgeSign}${(laLigaRec.edge * 100).toFixed(1)}%</b>`,
+        `💬 <i>${laLigaRec.reasoning}</i>`,
+        `📊 <i>Con forma real + cuotas reales</i>`,
+      )
     }
 
     lines.push(`\n⚠️ <i>Apuesta responsable — máx. 1-2 unidades</i>`)
